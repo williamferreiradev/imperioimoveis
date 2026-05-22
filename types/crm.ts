@@ -20,10 +20,15 @@ export interface Cliente {
     last_followup: string | null;
     ultimamensagemusuario: string | null;
     media_url: string | null;
+    stage?: string | null;
+    stage_id?: number | null;
+    phone?: string | null;
     metadata?: any;
     status_crm?: string;
     qualificado?: boolean;
     trava?: boolean;
+    ultima_mensagem_at?: string | null;
+    agent_active?: boolean | null;
 }
 
 export interface Relatorio {

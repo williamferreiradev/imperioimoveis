@@ -8,6 +8,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'view-details', lead: Cliente): void
+  (e: 'open-chat', leadId: string): void
 }>()
 
 const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
@@ -67,7 +68,7 @@ const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
 
              <!-- Modo -->
             <td class="px-6 py-4 text-sm">
-               <span v-if="!lead.Ativado" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-xs font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-500">
+               <span v-if="!lead.agent_active" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-xs font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-500">
                   <Lock class="w-3 h-3" /> Desativado
                </span>
                <span v-else class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-xs font-medium bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400">
@@ -78,7 +79,11 @@ const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
             <!-- Ações -->
             <td class="px-6 py-4 text-right">
                <div class="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                 <button class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-sm transition-all" title="Abrir Chat">
+                 <button 
+                   @click="emit('open-chat', lead.id)"
+                   class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-sm transition-all" 
+                   title="Abrir Chat"
+                 >
                    <MessageCircle class="w-4 h-4" />
                  </button>
                  <button 

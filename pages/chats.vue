@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useSupabaseClient } from '#imports'
-import { MessageSquare, Phone, Search, FileText, Menu, X, BotOff, Bot, EyeOff, Eye, PhoneForwarded } from 'lucide-vue-next'
+import { MessageSquare, Phone, Search, FileText, Menu, X, BotOff, Bot, PhoneForwarded } from 'lucide-vue-next'
 
 const route = useRoute()
 const { mainMargin } = useSidebarState()
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 
 // State
 const chats = ref<any[]>([])
@@ -16,7 +16,16 @@ const messagesLoading = ref(false)
 const searchQuery = ref('')
 const isSidebarOpen = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
-const phoneBlurred = ref(true)
+
+const stages = ref<any[]>([
+  { id: 1, estagio: 'novo', estagio_name: 'Novo Contato' },
+  { id: 2, estagio: 'em_atendimento', estagio_name: 'Em Atendimento' },
+  { id: 3, estagio: 'negociacao', estagio_name: 'Em Negociação' },
+  { id: 4, estagio: 'visita', estagio_name: 'Visita' },
+  { id: 5, estagio: 'fechado', estagio_name: 'Venda Fechada' },
+  { id: 6, estagio: 'perdido', estagio_name: 'Perdido' }
+])
+
 
 // Summary state
 const summaryText = ref('')
@@ -29,10 +38,76 @@ const editingHandoff = ref(false)
 const globalHandoffNumber = ref('+55 11 98888-0000')
 const editingGlobalHandoff = ref(false)
 
+// Parse message object to extract text content
+const parseMessage = (msgObj: any) => {
+  if (!msgObj) return { text: '', isSystem: false, systemAction: '', type: 'text' }
+  
+  // Se for um objeto com a estrutura output (e.g. LangChain output object)
+  if (msgObj.output && typeof msgObj.output.content === 'string') {
+    return { text: msgObj.output.content, isSystem: false, systemAction: '', type: 'text' }
+  }
+  
+  let text = msgObj.content || msgObj.text || ''
+  const msgType = msgObj.type || ''
+  
+  const additional = msgObj.additional_kwargs || msgObj.kwargs?.additional_kwargs || {}
+  const toolCalls = msgObj.tool_calls || additional.tool_calls || []
+  
+  if (toolCalls && toolCalls.length > 0) {
+     let toolNames = toolCalls.map((t: any) => {
+       if (typeof t.function?.name === 'string') return t.function.name
+       if (typeof t.name === 'string') return t.name
+       if (typeof t === 'string') return t
+       return 'ferramenta'
+     }).join(', ')
+     
+     const niceName = toolNames.replace(/_/g, ' ')
+     return { text: `IA ativou a(s) tool(s): ${niceName}`, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
+  }
+  
+  if (msgType === 'tool') {
+     return { text: typeof text === 'string' ? text : JSON.stringify(text), isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
+  }
+  
+  if (!text) return { text: '', isSystem: false, systemAction: '', type: 'text' }
+  
+  const trimmed = typeof text === 'string' ? text.trim() : JSON.stringify(text)
+  
+  if (trimmed.startsWith('Calling ') && trimmed.includes('with input:')) {
+     const functionName = trimmed.split(' ')[1] || 'ferramenta_interna'
+     const niceName = functionName.replace(/_/g, ' ')
+     return { text: trimmed, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
+  }
+  
+  if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (parsed.output && typeof parsed.output.content === 'string') {
+         return { text: parsed.output.content, isSystem: false, systemAction: '', type: 'text' }
+      }
+      if (typeof parsed === 'object') {
+         return { text: trimmed, isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
+      }
+    } catch(e) {}
+  }
+  
+  return { text: trimmed, isSystem: false, systemAction: '', type: 'text' }
+}
+
 // Fetch Clients to populate chat list
 const fetchChats = async () => {
   loading.value = true
   try {
+    // Fetch stages from DB
+    try {
+      const { data: stagesData } = await supabase.from('stage').select('*').order('id')
+      if (stagesData && stagesData.length > 0) {
+        stages.value = stagesData
+      }
+    } catch (e) {
+      console.error('Error fetching stages:', e)
+    }
+
     const { data: leadsData, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
     if (error) throw error
 
@@ -49,18 +124,33 @@ const fetchChats = async () => {
     }
 
     chats.value = (leadsData || []).map(c => {
-      const msgObj = latestMsgs[c.id]?.message || {};
+      let lastMsgText = 'Conversa iniciada...'
+      let lastSender = 'user'
+      
+      if (latestMsgs[c.id]) {
+        let rawMsg = latestMsgs[c.id].message || {}
+        if (typeof rawMsg === 'string') {
+          try { rawMsg = JSON.parse(rawMsg) } catch(e) {}
+        }
+        const realData = rawMsg.data || rawMsg
+        const parsed = parseMessage(realData)
+        lastMsgText = parsed.text || 'Conversa iniciada...'
+        lastSender = (realData.type === 'ai' || realData.id?.includes('AIMessage')) ? 'me' : 'user'
+      } else if (c.notes) {
+        lastMsgText = c.notes
+      }
+
       return {
         id: c.id,
         name: c.name || 'Sem nome',
         phone: c.phone || c.remotejid || 'Sem telefone',
-        lastMessage: msgObj.content || c.notes || 'Conversa iniciada...',
-        lastSender: msgObj.type === 'ai' ? 'me' : 'user',
+        lastMessage: lastMsgText,
+        lastSender: lastSender,
         timestamp: c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
         avatar: (c.name || 'U').charAt(0).toUpperCase(),
         media_url: undefined,
         Ativado: c.agent_active || false,
-        is_qualified: c.is_qualified || false,
+        is_qualified: c.is_qualified || ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(c.stage) || false,
         estagiokanbam: c.stage || 'novo'
       }
     })
@@ -92,55 +182,7 @@ const fetchMessages = async (chatId: string) => {
       
     if (error) throw error
     
-const parseMessage = (msgObj: any) => {
-      if (!msgObj) return { text: '', isSystem: false, systemAction: '', type: 'text' }
-      
-      let text = msgObj.content || msgObj.text || ''
-      const msgType = msgObj.type || ''
-      
-      const additional = msgObj.additional_kwargs || msgObj.kwargs?.additional_kwargs || {}
-      const toolCalls = msgObj.tool_calls || additional.tool_calls || []
-      
-      if (toolCalls && toolCalls.length > 0) {
-         let toolNames = toolCalls.map((t: any) => {
-           if (typeof t.function?.name === 'string') return t.function.name
-           if (typeof t.name === 'string') return t.name
-           if (typeof t === 'string') return t
-           return 'ferramenta'
-         }).join(', ')
-         
-         const niceName = toolNames.replace(/_/g, ' ')
-         return { text: `IA ativou a(s) tool(s): ${niceName}`, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
-      }
-      
-      if (msgType === 'tool') {
-         return { text: typeof text === 'string' ? text : JSON.stringify(text), isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
-      }
-      
-      if (!text) return { text: '', isSystem: false, systemAction: '', type: 'text' }
-      
-      const trimmed = typeof text === 'string' ? text.trim() : JSON.stringify(text)
-      
-      if (trimmed.startsWith('Calling ') && trimmed.includes('with input:')) {
-         const functionName = trimmed.split(' ')[1] || 'ferramenta_interna'
-         const niceName = functionName.replace(/_/g, ' ')
-         return { text: trimmed, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
-      }
-      
-      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-        try {
-          const parsed = JSON.parse(trimmed)
-          if (parsed.output && typeof parsed.output.content === 'string') {
-             return { text: parsed.output.content, isSystem: false, systemAction: '', type: 'text' }
-          }
-          if (typeof parsed === 'object') {
-            return { text: trimmed, isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
-          }
-        } catch(e) {}
-      }
-      
-      return { text: trimmed, isSystem: false, systemAction: '', type: 'text' }
-}
+
 
     messages.value = (data || []).map(m => {
       let rawMsg = m.message || {}
@@ -182,59 +224,15 @@ const scrollToBottom = async () => {
   if (messagesContainer.value) {
     messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight + 100
   }
+  // Fallback garantido pro final caso renderize algo pesado
+  setTimeout(() => {
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight + 100
+    }
+  }, 150)
 }
 
 let realtimeChannel: any
-
-const parseMessage = (msgObj: any) => {
-      if (!msgObj) return { text: '', isSystem: false, systemAction: '', type: 'text' }
-      
-      let text = msgObj.content || msgObj.text || ''
-      const msgType = msgObj.type || ''
-      
-      const additional = msgObj.additional_kwargs || msgObj.kwargs?.additional_kwargs || {}
-      const toolCalls = msgObj.tool_calls || additional.tool_calls || []
-      
-      if (toolCalls && toolCalls.length > 0) {
-         let toolNames = toolCalls.map((t: any) => {
-           if (typeof t.function?.name === 'string') return t.function.name
-           if (typeof t.name === 'string') return t.name
-           if (typeof t === 'string') return t
-           return 'ferramenta'
-         }).join(', ')
-         
-         const niceName = toolNames.replace(/_/g, ' ')
-         return { text: `IA ativou a(s) tool(s): ${niceName}`, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
-      }
-      
-      if (msgType === 'tool') {
-         return { text: typeof text === 'string' ? text : JSON.stringify(text), isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
-      }
-      
-      if (!text) return { text: '', isSystem: false, systemAction: '', type: 'text' }
-      
-      const trimmed = typeof text === 'string' ? text.trim() : JSON.stringify(text)
-      
-      if (trimmed.startsWith('Calling ') && trimmed.includes('with input:')) {
-         const functionName = trimmed.split(' ')[1] || 'ferramenta_interna'
-         const niceName = functionName.replace(/_/g, ' ')
-         return { text: trimmed, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
-      }
-      
-      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-        try {
-          const parsed = JSON.parse(trimmed)
-          if (parsed.output && typeof parsed.output.content === 'string') {
-             return { text: parsed.output.content, isSystem: false, systemAction: '', type: 'text' }
-          }
-          if (typeof parsed === 'object') {
-            return { text: trimmed, isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
-          }
-        } catch(e) {}
-      }
-      
-      return { text: trimmed, isSystem: false, systemAction: '', type: 'text' }
-}
 
 const playNotificationSound = () => {
     try {
@@ -279,8 +277,14 @@ const setupRealtime = () => {
         // Update Sidebar lastMessage
         const chatIdx = chats.value.findIndex(c => c.id === row.session_id)
         if (chatIdx !== -1) {
-           chats.value[chatIdx].lastMessage = row.message?.data?.content || row.message?.content || 'Mensagem enviada'
-           chats.value[chatIdx].lastSender = (row.message?.data?.type === 'ai' || row.message?.type === 'ai') ? 'me' : 'user'
+           let rawMsg = row.message || {}
+           if (typeof rawMsg === 'string') {
+             try { rawMsg = JSON.parse(rawMsg) } catch(e) {}
+           }
+           const realData = rawMsg.data || rawMsg
+           const parsed = parseMessage(realData)
+           chats.value[chatIdx].lastMessage = parsed.text || 'Conversa iniciada...'
+           chats.value[chatIdx].lastSender = (realData.type === 'ai' || realData.id?.includes('AIMessage')) ? 'me' : 'user'
         }
       }
     )
@@ -308,14 +312,7 @@ const generateSummary = async () => {
   summaryLoading.value = false
 }
 
-// Mask phone number
-const maskPhone = (phone: string) => {
-  if (!phone) return ''
-  if (phoneBlurred.value) {
-    return phone.slice(0, 4) + '•••••' + phone.slice(-2)
-  }
-  return phone
-}
+
 
 // Actions
 const toggleAI = async () => {
@@ -327,7 +324,21 @@ const toggleAI = async () => {
 
 const updateStatus = async () => {
   if (!selectedChat.value) return
-  await supabase.from('leads').update({ stage: selectedChat.value.estagiokanbam }).eq('id', selectedChat.value.id)
+  const isQual = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(selectedChat.value.estagiokanbam)
+  selectedChat.value.is_qualified = isQual
+  
+  const stageObj = stages.value.find(s => s.estagio === selectedChat.value.estagiokanbam)
+  const updateData: any = {
+    stage: selectedChat.value.estagiokanbam
+  }
+  if (stageObj) {
+    updateData.stage_id = stageObj.id
+  }
+  
+  const { error: updateError } = await supabase.from('leads').update(updateData).eq('id', selectedChat.value.id)
+  if (updateError) {
+    console.error('Error updating status in DB:', updateError)
+  }
 }
 
 onMounted(() => {
@@ -352,15 +363,7 @@ onUnmounted(() => {
       <div class="p-5 border-b border-gray-100 dark:border-dark-border">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-lg font-bold text-gray-900 dark:text-white">Conversas</h2>
-          <!-- Phone Blur Toggle -->
-          <button 
-            @click="phoneBlurred = !phoneBlurred"
-            :class="['p-1.5 rounded-lg transition-colors border', phoneBlurred ? 'text-gray-400 border-gray-100 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card' : 'text-primary-500 bg-primary-50 dark:bg-primary-500/10 border-primary-100 dark:border-primary-500/20']"
-            :title="phoneBlurred ? 'Mostrar telefones' : 'Ocultar telefones'"
-          >
-            <EyeOff v-if="phoneBlurred" class="w-3.5 h-3.5" />
-            <Eye v-else class="w-3.5 h-3.5" />
-          </button>
+
         </div>
         
         <!-- Global Handoff Number -->
@@ -455,15 +458,7 @@ onUnmounted(() => {
               <h2 class="font-semibold text-gray-900 dark:text-white text-sm">{{ selectedChat.name }}</h2>
               <p class="text-xs text-gray-400 dark:text-dark-muted flex items-center gap-1">
                 <Phone class="w-3 h-3" />
-                {{ maskPhone(selectedChat.phone) }}
-                <button 
-                  @click="phoneBlurred = !phoneBlurred" 
-                  class="ml-1 text-gray-400 hover:text-primary-500 transition-colors"
-                  :title="phoneBlurred ? 'Mostrar número' : 'Ocultar número'"
-                >
-                  <EyeOff v-if="phoneBlurred" class="w-3 h-3" />
-                  <Eye v-else class="w-3 h-3" />
-                </button>
+                {{ selectedChat.phone }}
               </p>
             </div>
           </div>
@@ -613,12 +608,13 @@ onUnmounted(() => {
               @change="updateStatus"
               class="w-full bg-gray-50 dark:bg-dark-card border border-gray-100 dark:border-dark-border rounded-xl p-3 text-gray-900 dark:text-white text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary-200 dark:focus:ring-primary-500/30 appearance-none"
             >
-              <option value="novo">Novo</option>
-              <option value="contato">Contato</option>
-              <option value="qualificando">Qualificando</option>
-              <option value="Engajado">Engajado</option>
-              <option value="qualificado">Qualificado</option>
-              <option value="agendado">Agendado</option>
+              <option 
+                v-for="s in stages" 
+                :key="s.id" 
+                :value="s.estagio"
+              >
+                {{ s.estagio_name || s.descricao || s.estagio }}
+              </option>
             </select>
             <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

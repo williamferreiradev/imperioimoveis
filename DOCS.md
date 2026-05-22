@@ -1,4 +1,4 @@
-# 📚 CRM Data Impetus - Documentação Completa
+# 📚 TOPPNEUS - Documentação Completa
 
 > **Versão:** 1.0.0  
 > **Última Atualização:** 07/02/2026  
@@ -27,7 +27,7 @@
 
 ## 🎯 Visão Geral
 
-**CRM Data Impetus** é um sistema de gerenciamento de relacionamento com clientes (CRM) desenvolvido com Nuxt 4, focado em gestão de leads, conversas via WhatsApp, e análise de métricas de vendas.
+**TOPPNEUS** é um sistema de gerenciamento de relacionamento com clientes (CRM) desenvolvido com Nuxt 4, focado em gestão de leads, conversas via WhatsApp, e análise de métricas de vendas.
 
 ### Objetivos do Projeto
 - Gerenciar leads em pipeline Kanban
@@ -64,7 +64,7 @@
 ## 📁 Estrutura do Projeto
 
 ```
-crmDataImpetus/
+toppneus/
 ├── .agent/                    # Configurações de agentes AI
 ├── .env                       # Variáveis de ambiente (Supabase)
 ├── .git/                      # Controle de versão Git
@@ -120,7 +120,7 @@ crmDataImpetus/
 ### 2. Clone o Repositório
 ```bash
 git clone https://github.com/williamferreiraDev/crmDATAimpetus.git
-cd crmDataImpetus
+cd toppneus
 ```
 
 ### 3. Instalar Dependências

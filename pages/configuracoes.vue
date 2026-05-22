@@ -5,7 +5,7 @@ import Sidebar from '~/components/Sidebar.vue'
 import { useSupabaseClient } from '#imports'
 
 const { mainMargin } = useSidebarState()
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 
 // Controls modal visibility
 const activeModal = ref<string | null>(null)
@@ -98,7 +98,7 @@ const openConfig = async (configType: string) => {
     } 
     
     else if (configType === 'system') {
-      const { data, error } = await supabase.from('sistemaConfiguracao').select('*').limit(1).single()
+      const { data, error } = await supabase.from('sistemaconfiguracao').select('*').limit(1).single()
       if (error && error.code !== 'PGRST116') throw error // PGRST116 is "No rows found"
       if (data) {
         sistemaConfig.value = { ...data }
@@ -150,6 +150,7 @@ const saveHours = async () => {
     const { error } = await supabase.from('clinic_hours').upsert(payload, { onConflict: 'clinic_id,day_of_week' })
     if (error) throw error
     
+    alert('Horários salvos com sucesso!')
     closeModal()
   } catch (err: any) {
     console.error(err)
@@ -203,6 +204,7 @@ const saveQuestions = async () => {
         if (error) throw error
     }
     
+    alert('Perguntas salvas com sucesso!')
     closeModal()
   } catch(err: any) {
       console.error(err)
@@ -215,9 +217,7 @@ const saveQuestions = async () => {
 const saveSystem = async () => {
   isSaving.value = true
   try {
-    const clinicId = await getMyClinicId()
     const payload = {
-       clinic_id: clinicId,
        nomeclinica: sistemaConfig.value.nomeclinica,
        nomeIA: sistemaConfig.value.nomeIA,
        promptIA: sistemaConfig.value.promptIA,
@@ -226,17 +226,18 @@ const saveSystem = async () => {
     
     if (sistemaConfig.value.id) {
        // Update
-       const { error } = await supabase.from('sistemaConfiguracao').update(payload).eq('id', sistemaConfig.value.id)
+       const { error } = await supabase.from('sistemaconfiguracao').update(payload).eq('id', sistemaConfig.value.id)
        if (error) throw error
     } else {
        // Insert
-       const { error } = await supabase.from('sistemaConfiguracao').insert(payload)
+       const { error } = await supabase.from('sistemaconfiguracao').insert(payload)
        if (error) throw error
     }
+    alert('Configurações do sistema salvas com sucesso!')
     closeModal()
   } catch(err: any) {
     console.error(err)
-    alert('Erro ao salvar configuração central.')
+    alert('Erro ao salvar configuração central: ' + (err.message || err.details || JSON.stringify(err)))
   } finally {
     isSaving.value = false
   }
@@ -249,6 +250,7 @@ const saveProfile = async () => {
         data: { full_name: userProfile.value.fullName }
      })
      if (error) throw error
+     alert('Perfil atualizado com sucesso!')
      closeModal()
    } catch(err: any) {
       console.error(err)
@@ -294,7 +296,7 @@ const options = [
       <!-- Header -->
       <div class="mb-10">
         <h1 class="text-3xl font-bold font-serif text-gray-900 dark:text-white tracking-wide">Configurações do Sistema</h1>
-        <p class="text-gray-500 dark:text-gray-400 mt-2 font-light">Gerencie as preferências, horários e detalhes de perfil da sua loja/concessionária.</p>
+        <p class="text-gray-500 dark:text-gray-400 mt-2 font-light">Gerencie as preferências, horários e detalhes de perfil da sua loja/TIA.</p>
       </div>
 
       <!-- Config Grid -->
@@ -402,7 +404,7 @@ const options = [
           <div v-else-if="activeModal === 'system'" class="space-y-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div>
-                 <label class="block text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-2">Nome da Concessionária (Fantasia)</label>
+                 <label class="block text-xs font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-2">Nome da TIA (Fantasia)</label>
                  <input v-model="sistemaConfig.nomeclinica" type="text" placeholder="Ex: ImplanteTech" class="w-full bg-white dark:bg-dark-surface border border-gray-200 dark:border-white/10 rounded-sm px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:border-primary-500 shadow-sm">
                </div>
                <div>

@@ -6,6 +6,7 @@ import type { Cliente } from '@/types/crm'
 const props = defineProps<{
   modelValue: boolean
   lead: Cliente | null
+  stages?: any[]
 }>()
 
 const emit = defineEmits<{
@@ -15,45 +16,27 @@ const emit = defineEmits<{
 }>()
 
 const localNotes = ref('')
-const localStatus = ref('')
 
 // Sync state when lead changes
 watch(() => props.lead, (newLead) => {
   if (newLead) {
-    localNotes.value = newLead.metadata?.notes || ''
-    localStatus.value = newLead.estagiokanbam || 'novo'
+    localNotes.value = newLead.about || ''
   }
 }, { immediate: true })
 
-const statusOptions = [
-  { label: 'Novo', value: 'novo', color: 'bg-blue-500' },
-  { label: 'Em Contato', value: 'em_contato', color: 'bg-yellow-500' },
-  { label: 'Qualificado', value: 'qualificado', color: 'bg-primary-500' },
-  { label: 'Convertido', value: 'convertido', color: 'bg-green-500' },
-  { label: 'Perdido', value: 'perdido', color: 'bg-red-500' }
-]
-
-const currentStatusColor = computed(() => {
-  const status = statusOptions.find(s => s.value === localStatus.value)
-  return status ? status.color : 'bg-gray-500'
-})
-
 const close = () => emit('update:modelValue', false)
 
-const handleStatusChange = async (event: Event) => {
-  const newStatus = (event.target as HTMLSelectElement).value
-  if (!props.lead) return
-  localStatus.value = newStatus
-  emit('update-status', props.lead.id, newStatus)
+const isNotesModified = computed(() => {
+  return localNotes.value !== (props.lead?.about || '')
+})
+
+const handleCancelNotes = () => {
+  localNotes.value = props.lead?.about || ''
 }
 
 const handleSaveNotes = async () => {
   if (!props.lead) return
-  
-  const currentNotes = props.lead.metadata?.notes || ''
-  if (localNotes.value !== currentNotes) {
-    emit('save-notes', props.lead.id, localNotes.value)
-  }
+  emit('save-notes', props.lead.id, localNotes.value)
 }
 
 const formatDate = (dateString?: string) => {
@@ -66,6 +49,118 @@ const formatDate = (dateString?: string) => {
     minute: '2-digit'
   })
 }
+
+const formatPhone = (phone?: string | null, remotejid?: string | null) => {
+  const raw = phone || remotejid || ''
+  return raw.replace('@c.us', '')
+}
+
+const formatRelativeTime = (dateString?: string) => {
+  if (!dateString) return 'Desconhecido'
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  
+  if (diffInSeconds < 60) return 'Agora mesmo'
+  if (diffInSeconds < 3600) {
+    const m = Math.floor(diffInSeconds / 60)
+    return `${m} minuto${m > 1 ? 's' : ''} atrás`
+  }
+  if (diffInSeconds < 86400) {
+    const h = Math.floor(diffInSeconds / 3600)
+    return `${h} hora${h > 1 ? 's' : ''} atrás`
+  }
+  if (diffInSeconds < 2592000) {
+    const d = Math.floor(diffInSeconds / 86400)
+    return `${d} dia${d > 1 ? 's' : ''} atrás`
+  }
+  if (diffInSeconds < 31536000) {
+    const m = Math.floor(diffInSeconds / 2592000)
+    return `${m} mês${m > 1 ? 'es' : ''} atrás`
+  }
+  const y = Math.floor(diffInSeconds / 31536000)
+  return `${y} ano${y > 1 ? 's' : ''} atrás`
+}
+
+const computedScore = computed(() => {
+  if (!props.lead || !props.stages || props.stages.length === 0) {
+    // Fallback to static mapping if stages are empty or not loaded
+    const leadStage = props.lead?.stage || props.lead?.estagiokanbam || 'novo'
+    switch (leadStage) {
+      case 'novo': return 'C'
+      case 'qualificando': return 'B'
+      case 'qualificado': return 'A'
+      case 'agendado': return 'A+'
+      case 'fechado':
+      case 'convertido': return 'A++'
+      case 'perdido': return 'F'
+      default: return props.lead?.score || 'C'
+    }
+  }
+  
+  const leadStage = props.lead.stage || props.lead.estagiokanbam || 'novo'
+  const leadStageId = props.lead.stage_id
+  
+  // Find the index of the stage in props.stages
+  const stageIndex = props.stages.findIndex(s => s.estagio === leadStage || s.id === leadStageId)
+  
+  if (stageIndex === -1) {
+    return props.lead.score || 'C'
+  }
+  
+  const stageObj = props.stages[stageIndex]
+  if (stageObj.estagio === 'perdido') {
+    return 'F'
+  }
+  
+  // First column -> C, then B, A, A+, A++...
+  const scores = ['C', 'B', 'A', 'A+', 'A++']
+  return scores[stageIndex] || 'A++'
+})
+
+const currentStageLabel = computed(() => {
+  if (!props.lead) return 'Desconhecido'
+  const leadStage = props.lead.stage || props.lead.estagiokanbam || 'novo'
+  const stageObj = props.stages?.find(s => s.estagio === leadStage || s.id === props.lead?.stage_id)
+  if (stageObj) {
+    return stageObj.estagio_name || stageObj.descricao || stageObj.estagio
+  }
+  // Simple mapping if stages list is not loaded
+  const fallbackOptions: Record<string, string> = {
+    novo: 'Novo',
+    qualificando: 'Qualificando',
+    qualificado: 'Qualificado',
+    agendado: 'Visita',
+    fechado: 'Fechado',
+    convertido: 'Fechado',
+    perdido: 'Perdido'
+  }
+  return fallbackOptions[leadStage] || leadStage
+})
+
+const currentStageBadgeClasses = computed(() => {
+  const leadStage = props.lead?.stage || props.lead?.estagiokanbam || 'novo'
+  switch (leadStage) {
+    case 'novo':
+      return 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20 shadow-sm'
+    case 'em_atendimento':
+    case 'qualificando':
+      return 'bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-500/20 shadow-sm'
+    case 'negociacao':
+    case 'qualificado':
+      return 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 shadow-sm'
+    case 'visita':
+    case 'agendado':
+      return 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 shadow-sm'
+    case 'fechado':
+    case 'convertido':
+      return 'bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-500/20 shadow-sm'
+    case 'perdido':
+      return 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/20 shadow-sm'
+    default:
+      return 'bg-gray-100 dark:bg-dark-bg text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-dark-border'
+  }
+})
 </script>
 
 <template>
@@ -122,7 +217,7 @@ const formatDate = (dateString?: string) => {
                 <span class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Telefone</span>
                 <div class="flex items-center gap-2 text-lg text-gray-900 dark:text-white">
                   <Phone class="w-4 h-4 text-primary-500" />
-                  <span>{{ lead.remotejid }}</span>
+                  <span>{{ formatPhone(lead.phone, lead.remotejid) }}</span>
                 </div>
               </div>
 
@@ -140,16 +235,9 @@ const formatDate = (dateString?: string) => {
                 <span class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Avaliação</span>
                 <div>
                   <span 
-                    v-if="lead.is_qualified" 
-                    class="inline-flex px-3 py-1 rounded-sm text-xs font-bold bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500 border border-primary-200 dark:border-primary-500/20 shadow-sm"
+                    :class="['inline-flex px-3 py-1 rounded-sm text-xs font-bold border shadow-sm', currentStageBadgeClasses]"
                   >
-                    Aprovada
-                  </span>
-                  <span 
-                    v-else 
-                    class="inline-flex px-3 py-1 rounded-sm text-xs font-bold bg-gray-100 dark:bg-dark-bg text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-dark-border"
-                  >
-                    Pendente
+                    {{ currentStageLabel }}
                   </span>
                 </div>
               </div>
@@ -159,7 +247,7 @@ const formatDate = (dateString?: string) => {
                 <span class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Interesse</span>
                 <div class="flex items-center gap-2 text-gray-900 dark:text-white">
                   <Package class="w-4 h-4 text-primary-500" />
-                  <span class="text-sm font-medium">{{ lead.vertical || 'Não informado' }}</span>
+                  <span class="text-sm font-medium">{{ lead.about || 'Não informado' }}</span>
                 </div>
               </div>
 
@@ -168,7 +256,7 @@ const formatDate = (dateString?: string) => {
                 <span class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Score IA</span>
                 <div class="flex items-center gap-2 text-gray-900 dark:text-white">
                   <TrendingUp class="w-4 h-4 text-primary-500" />
-                  <span class="font-bold text-sm">{{ lead.score || 'A+' }}</span>
+                  <span class="font-bold text-sm">{{ computedScore }}</span>
                 </div>
               </div>
 
@@ -180,25 +268,6 @@ const formatDate = (dateString?: string) => {
             <!-- Actions -->
             <div class="space-y-4">
               
-              <!-- Status Selector -->
-              <div class="space-y-2">
-                <label class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Status CRM</label>
-                <div class="relative">
-                  <select
-                    v-model="localStatus"
-                    @change="handleStatusChange"
-                    class="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-dark-border text-gray-900 dark:text-white rounded-sm px-4 py-3 pl-8 pr-10 appearance-none shadow-sm font-medium text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
-                  >
-                    <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-                      {{ opt.label }}
-                    </option>
-                  </select>
-                  <div class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <span :class="['w-2 h-2 rounded-full inline-block', currentStatusColor]"></span>
-                  </div>
-                </div>
-              </div>
-
               <!-- Notes -->
               <div class="space-y-2">
                 <label class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Observações</label>
@@ -206,9 +275,26 @@ const formatDate = (dateString?: string) => {
                   v-model="localNotes"
                   placeholder="Adicione observações sobre o perfil deste interessado..."
                   rows="4"
-                  @blur="handleSaveNotes"
                   class="w-full bg-gray-50 dark:bg-dark-bg border border-gray-200 dark:border-dark-border text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded-sm px-4 py-3 focus:outline-none focus:ring-1 focus:ring-primary-500 resize-none text-sm shadow-sm"
                 ></textarea>
+                
+                <!-- Cancel / Save Buttons -->
+                <Transition name="fade">
+                  <div v-if="isNotesModified" class="flex justify-end gap-2 pt-1">
+                    <button
+                      @click="handleCancelNotes"
+                      class="px-4 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors duration-200"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      @click="handleSaveNotes"
+                      class="px-4 py-2 text-xs font-semibold text-white bg-primary-500 hover:bg-primary-600 rounded-sm shadow-sm transition-colors duration-200"
+                    >
+                      Salvar Observações
+                    </button>
+                  </div>
+                </Transition>
               </div>
 
             </div>
@@ -217,7 +303,7 @@ const formatDate = (dateString?: string) => {
           <!-- Footer -->
           <div class="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-dark-border text-xs text-gray-500 dark:text-dark-muted bg-gray-50 dark:bg-dark-bg mt-2">
             <span class="font-medium">Follow-ups: {{ lead.metadata?.followups || 0 }} tentativas</span>
-            <span class="font-medium">Último: {{ formatDate(lead.metadata?.last_followup) }}</span>
+            <span class="font-medium">Última interação: {{ formatRelativeTime(lead.ultima_mensagem_at || lead.created_at) }}</span>
           </div>
 
         </div>

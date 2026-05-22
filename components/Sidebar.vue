@@ -6,6 +6,7 @@ import {
   KanbanSquare, 
   MessageSquare, 
   Users, 
+  UserCircle,
   BarChart3, 
   LogOut,
   Building,
@@ -21,7 +22,7 @@ import {
 const router = useRouter()
 const { isCollapsed, toggleSidebar } = useSidebarState()
 const user = { user_metadata: { full_name: 'Usuário Demo' } }
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 
 const leadsCount = ref(0)
 const clinicId = ref<string | null>(null)
@@ -84,10 +85,11 @@ const navigation = computed(() => [
     { name: 'Dashboard', icon: LayoutDashboard, route: '/dashboard' },
     { name: 'Negociações', icon: KanbanSquare, route: '/crm', badge: leadsCount.value > 0 ? String(leadsCount.value) : undefined },
     { name: 'Contatos', icon: Users, route: '/contatos' },
+    { name: 'Corretores', icon: UserCircle, route: '/corretores' },
     { name: 'Visitas', icon: CalendarDays, route: '/agenda' },
   ]},
   { name: 'GESTÃO', items: [
-    { name: 'Pátio', icon: Car, route: '/inventario' },
+    { name: 'Imóveis', icon: Building, route: '/inventario' },
     { name: 'Conversas', icon: MessageSquare, route: '/chats' },
     { name: 'Relatórios', icon: BarChart3, route: '/relatorios' },
     { name: 'Reativar Interessados', icon: RefreshCw, route: '/reativacao' },
@@ -117,8 +119,8 @@ const handleLogout = async () => {
             <Building class="w-5 h-5 text-white" />
          </div>
          <div v-if="!isCollapsed" class="sidebar-text-transition overflow-hidden">
-           <span class="text-gray-900 dark:text-white font-bold text-lg tracking-tight block whitespace-nowrap">AutoOS</span>
-           <span class="text-[11px] text-gray-400 dark:text-dark-muted font-medium whitespace-nowrap uppercase tracking-wider">Dealership</span>
+           <span class="text-gray-900 dark:text-white font-bold text-lg tracking-tight block whitespace-nowrap">IMPÉRIO</span>
+           <span class="text-[11px] text-gray-400 dark:text-dark-muted font-medium whitespace-nowrap uppercase tracking-wider">Imóveis</span>
          </div>
       </div>
       <button 
@@ -163,15 +165,15 @@ const handleLogout = async () => {
 
               <!-- Badge -->
               <span 
-                v-if="item.badge && !isCollapsed" 
+                v-if="(item as any).badge && !isCollapsed" 
                 class="bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm"
               >
-                {{ item.badge }}
+                {{ (item as any).badge }}
               </span>
 
               <!-- Collapsed badge dot -->
               <span 
-                v-if="item.badge && isCollapsed" 
+                v-if="(item as any).badge && isCollapsed" 
                 class="absolute top-1.5 right-1.5 w-2 h-2 bg-primary-500 rounded-full"
               ></span>
             </NuxtLink>

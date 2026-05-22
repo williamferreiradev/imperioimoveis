@@ -20,16 +20,18 @@ export default <Partial<Config>>{
       },
       colors: {
         primary: {
-          DEFAULT: '#E53935', // Vermelho Forte
-          50: '#FFEBEE',
-          100: '#FFCDD2',
-          200: '#EF9A9A',
-          300: '#E57373',
-          400: '#EF5350',
-          500: '#E53935',
-          600: '#D32F2F',
-          700: '#C62828',
-          glow: '#E5393530'
+          DEFAULT: '#00539B', // Goodyear Blue
+          50: '#eef6ff',
+          100: '#d9ecff',
+          200: '#bddfff',
+          300: '#8ccbff',
+          400: '#54afff',
+          500: '#00539B',
+          600: '#004280',
+          700: '#003366',
+          800: '#00224d',
+          900: '#001133',
+          glow: '#00539B30'
         },
         dark: {
           bg: '#050505',
@@ -40,11 +42,11 @@ export default <Partial<Config>>{
           muted: '#9CA3AF'
         },
         accent: {
-          DEFAULT: '#FF1744',
+          DEFAULT: '#FFDD00', // Goodyear Yellow
         }
       },
       boxShadow: {
-        luxury: '0 10px 30px -5px rgba(229, 57, 53, 0.25)', // Sombra Vermelha
+        luxury: '0 10px 30px -5px rgba(0, 83, 155, 0.25)', // Sombra Azul
         card: '0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2)',
         'card-hover': '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2)',
       },

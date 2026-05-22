@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
-import { Phone, Lock, Bot, Eye, EyeOff } from 'lucide-vue-next'
+import { Phone, Lock, Bot, Eye } from 'lucide-vue-next'
 import type { Cliente, CrmStatus } from '@/types/crm'
 
 const props = defineProps<{
@@ -14,7 +14,7 @@ const emit = defineEmits<{
   (e: 'view-details', lead: any): void
 }>()
 
-const localColumns = ref<Record<string, any[]>>({})
+const localColumns = ref<any>({})
 
 // Auto-scroll & Dragging states (devem vir ANTES do Watch para evitar Temporal Dead Zone)
 const kanbanRef = ref<HTMLElement | null>(null)
@@ -155,22 +155,47 @@ onUnmounted(() => {
           <!-- Phone -->
           <div class="flex items-center gap-2 text-gray-500 dark:text-dark-muted text-xs bg-gray-50/80 dark:bg-dark-card/80 p-2.5 rounded-sm border border-gray-100/50 dark:border-dark-border/50">
              <Phone class="w-3.5 h-3.5 flex-shrink-0 text-primary-400" />
-             <span class="font-mono tracking-wider blur-sm select-none hover:blur-none transition-all">{{ lead.phone || 'Sem número' }}</span>
+             <span class="font-mono tracking-wider">{{ lead.phone || 'Sem número' }}</span>
           </div>
 
           <!-- Footer: Badges -->
           <div class="flex items-center justify-between">
+            <template v-if="lead.stage === 'novo' || lead.stage === 'negociacao'"></template>
             <span 
-              v-if="lead.stage === 'qualificado' || lead.stage === 'convertido'" 
-              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              v-else-if="lead.stage === 'em_atendimento'" 
+              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-dark-card text-gray-400 shadow-sm"
+            >
+              Não qualificado
+            </span>
+            <span 
+              v-else-if="lead.stage === 'visita' || lead.stage === 'qualificado' || lead.stage === 'agendado'" 
+              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 shadow-sm"
+            >
+              Qualificado
+            </span>
+            <span 
+              v-else-if="lead.stage === 'fechado' || lead.stage === 'convertido'" 
+              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border border-green-100 dark:border-green-500/20 shadow-sm"
+            >
+              Fechado
+            </span>
+            <span 
+              v-else-if="lead.stage === 'perdido'" 
+              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-500/20 shadow-sm"
+            >
+              Perdido
+            </span>
+            <span 
+              v-else-if="lead.is_qualified" 
+              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 shadow-sm"
             >
               Qualificado
             </span>
             <span 
               v-else 
-              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-dark-card text-gray-400"
+              class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-dark-card text-gray-400 shadow-sm"
             >
-               Não qualificado
+              Não qualificado
             </span>
 
             <div v-if="lead.agent_active === false" class="text-amber-500" title="Modo Manual (Travado)">

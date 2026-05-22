@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSupabaseClient } from '#imports'
-import { User, Phone, Search, Eye, EyeOff, Filter, Calendar } from 'lucide-vue-next'
+import { User, Phone, Search, Filter, Calendar } from 'lucide-vue-next'
 import LeadDetailsModal from '@/components/leads/LeadDetailsModal.vue'
 import type { Cliente } from '@/types/crm'
 
 const { mainMargin } = useSidebarState()
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 
 // State
 const contacts = ref<any[]>([])
+const stages = ref<any[]>([])
 const loading = ref(true)
 const searchQuery = ref('')
 const showModal = ref(false)
 const selectedContact = ref<Cliente | null>(null)
-const phoneBlurred = ref(true)
+
 const showFilters = ref(false)
 const filterQualified = ref<'all' | 'yes' | 'no'>('all')
 const filterDateFrom = ref('')
@@ -25,6 +26,10 @@ const fetchContacts = async () => {
   loading.value = true
   
   try {
+    const { data: stagesData, error: stagesError } = await supabase.from('stage').select('*').order('id')
+    if (stagesError) throw stagesError
+    stages.value = stagesData || []
+
     const { data: leadsData, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
     if (error) throw error
     contacts.value = leadsData || []
@@ -76,7 +81,7 @@ const filteredContacts = computed(() => {
 
   if (filterQualified.value !== 'all') {
     result = result.filter((c: any) => {
-      const isQualified = c.stage === 'qualificado' || c.stage === 'convertido'
+      const isQualified = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(c.stage)
       return filterQualified.value === 'yes' ? isQualified : !isQualified
     })
   }
@@ -92,6 +97,47 @@ const clearFilters = () => {
   filterDateTo.value = ''
 }
 
+// CRM Stage Helpers
+const getStageLabel = (stage: string, stageId?: number | null) => {
+  const stageObj = stages.value.find((s: any) => s.estagio === stage || s.id === stageId)
+  if (stageObj) {
+    return stageObj.estagio_name || stageObj.descricao || stageObj.estagio
+  }
+  const fallbackOptions: Record<string, string> = {
+    novo: 'Novo',
+    em_atendimento: 'Em Atendimento',
+    negociacao: 'Em Negociação',
+    visita: 'Visita',
+    agendado: 'Visita',
+    fechado: 'Venda Fechada',
+    convertido: 'Venda Fechada',
+    perdido: 'Perdido'
+  }
+  return fallbackOptions[stage] || stage || 'Novo'
+}
+
+const getStageBadgeClass = (stage: string) => {
+  const s = stage || 'novo'
+  switch (s) {
+    case 'novo':
+      return 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/20 shadow-sm'
+    case 'em_atendimento':
+      return 'bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-500/20 shadow-sm'
+    case 'negociacao':
+      return 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20 shadow-sm'
+    case 'visita':
+    case 'agendado':
+      return 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 shadow-sm'
+    case 'fechado':
+    case 'convertido':
+      return 'bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 border border-green-200 dark:border-green-500/20 shadow-sm'
+    case 'perdido':
+      return 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-500/20 shadow-sm'
+    default:
+      return 'bg-gray-100 dark:bg-dark-bg text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-dark-border shadow-sm'
+  }
+}
+
 // Open modal
 const openContactDetails = (contact: Cliente) => {
   selectedContact.value = contact
@@ -100,18 +146,34 @@ const openContactDetails = (contact: Cliente) => {
 
 // Handle status update from modal
 const handleStatusUpdate = async (id: string, newStage: any) => {
+  let stageObj = newStage
+  if (typeof newStage === 'string') {
+    stageObj = stages.value.find((s: any) => s.estagio === newStage)
+  }
+  
+  if (!stageObj) {
+    console.error('Stage not found for status update:', newStage)
+    return
+  }
+
   const contact = contacts.value.find(c => c.id === id)
+  const isQual = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(stageObj.estagio)
   if (contact) {
-    contact.stage = newStage.estagio
-    contact.stage_id = newStage.id
+    contact.stage = stageObj.estagio
+    contact.stage_id = stageObj.id
+    contact.is_qualified = isQual
   }
   try {
-    await supabase.from('leads').update({
-      stage_id: newStage.id,
-      stage: newStage.estagio
+    const { error: updateError } = await supabase.from('leads').update({
+      stage_id: stageObj.id,
+      stage: stageObj.estagio
     }).eq('id', id)
+    
+    if (updateError) {
+      console.error('Error updating status in DB:', updateError)
+    }
   } catch (err) {
-    console.error('Error updating config:', err)
+    console.error('Error updating status:', err)
   }
 }
 
@@ -163,14 +225,7 @@ onUnmounted(() => {
             <h2 class="text-lg font-bold text-gray-900 dark:text-white">Diretório de Interessados</h2>
           </div>
           <div class="flex items-center gap-2">
-            <!-- Phone Blur -->
-            <button 
-              @click="phoneBlurred = !phoneBlurred"
-              :class="['flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors border', phoneBlurred ? 'text-gray-500 dark:text-dark-muted hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-dark-card border-gray-100 dark:border-dark-border' : 'text-primary-600 bg-primary-50 dark:bg-primary-500/10 border-primary-200 dark:border-primary-500/20']"
-            >
-              <EyeOff v-if="phoneBlurred" class="w-3.5 h-3.5" />
-              <Eye v-else class="w-3.5 h-3.5" />
-            </button>
+
 
             <!-- Filter toggle -->
             <button 
@@ -278,23 +333,16 @@ onUnmounted(() => {
                 </h3>
                 <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-dark-muted mt-0.5">
                   <Phone class="w-3 h-3" />
-                  <span :class="{ 'blur-sm select-none': phoneBlurred }">{{ contact.phone || '' }}</span>
+                  <span>{{ contact.phone || '' }}</span>
                 </div>
               </div>
             </div>
 
             <div class="col-span-4 flex items-center justify-end gap-2">
               <span
-                v-if="contact.stage === 'qualificado' || contact.stage === 'convertido'"
-                class="inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-500 border border-primary-200 dark:border-primary-500/20"
+                :class="['inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold border shadow-sm', getStageBadgeClass(contact.stage)]"
               >
-                Aprovado
-              </span>
-              <span
-                v-else
-                class="inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/10"
-              >
-                 Pendente
+                {{ getStageLabel(contact.stage, contact.stage_id) }}
               </span>
 
               <!-- Travado Badge -->
@@ -316,6 +364,7 @@ onUnmounted(() => {
     :model-value="showModal"
     @update:model-value="showModal = $event"
     :lead="selectedContact"
+    :stages="stages"
     @update-status="handleStatusUpdate"
     @save-notes="handleNotesUpdate"
   />

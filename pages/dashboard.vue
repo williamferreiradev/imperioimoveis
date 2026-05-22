@@ -6,8 +6,7 @@ import {
   Clock, 
   AlertCircle, 
   Filter, 
-  Eye, 
-  EyeOff,
+  Eye,
   Lock, 
   ChevronLeft,
   ChevronRight,
@@ -23,7 +22,7 @@ definePageMeta({
 })
 
 const { mainMargin } = useSidebarState()
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 
 interface Lead {
   id: string
@@ -38,6 +37,7 @@ interface Lead {
 
 // Reactive State
 const leads = ref<Lead[]>([])
+const stages = ref<any[]>([])
 const metrics = reactive({
   total: 0,
   interested: 0,
@@ -48,15 +48,6 @@ const loading = ref(true)
 const showModal = ref(false)
 const selectedLead = ref<Cliente | null>(null)
 const fullLeadsData = ref<any[]>([])
-const phoneBlurred = ref(true)
-
-const maskPhone = (phone: string) => {
-  if (!phone) return ''
-  if (phoneBlurred.value) {
-    return phone.slice(0, 4) + '•••••' + phone.slice(-2)
-  }
-  return phone
-}
 
 // Filter State
 const showFilters = ref(false)
@@ -114,6 +105,10 @@ const hasActiveFilters = computed(() => filterStatus.value !== 'all' || filterIn
 const fetchData = async () => {
   loading.value = true
   try {
+    const { data: stagesData, error: stagesError } = await supabase.from('stage').select('*').order('id')
+    if (stagesError) throw stagesError
+    stages.value = stagesData || []
+
     const { data: leadsData, error } = await supabase
       .from('leads')
       .select('*')
@@ -134,7 +129,7 @@ const fetchData = async () => {
     leads.value = (leadsData || []).map((item: any) => {
       total++
       
-      const isInterested = item.stage === 'qualificado' || item.stage === 'convertido'
+      const isInterested = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(item.stage)
       if (isInterested) interested++
       
       const isLocked = item.agent_active === false
@@ -179,13 +174,40 @@ const openChat = (leadId: string) => {
   navigateTo(`/chats?clientId=${leadId}`)
 }
 
-const handleStatusUpdate = async (id: string, newStatus: string) => {
-  const lead = fullLeadsData.value.find(l => l.id === id)
-  if (lead) {
-    lead.stage = newStatus
+const handleStatusUpdate = async (id: string, newStage: any) => {
+  let stageObj = newStage
+  if (typeof newStage === 'string') {
+    stageObj = stages.value.find((s: any) => s.estagio === newStage)
   }
+  
+  if (!stageObj) {
+    console.error('Stage not found for status update:', newStage)
+    return
+  }
+
+  const lead = fullLeadsData.value.find(l => l.id === id)
+  const isQual = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(stageObj.estagio)
+  if (lead) {
+    lead.stage = stageObj.estagio
+    lead.stage_id = stageObj.id
+    lead.is_qualified = isQual
+  }
+
+  // Also update local list if we show it
+  const localLead = leads.value.find(l => l.id === id)
+  if (localLead) {
+    localLead.interested = isQual
+  }
+
   try {
-    await supabase.from('leads').update({ stage: newStatus }).eq('id', id)
+    const { error: updateError } = await supabase.from('leads').update({
+      stage: stageObj.estagio,
+      stage_id: stageObj.id
+    }).eq('id', id)
+    
+    if (updateError) {
+      console.error('Error updating status in DB:', updateError)
+    }
   } catch (err) {
     console.error('Error updating status:', err)
   }
@@ -305,20 +327,6 @@ onMounted(() => {
               {{ filteredLeads.length }} clientes
             </span>
 
-            <button 
-              @click="phoneBlurred = !phoneBlurred"
-              :class="[
-                'flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-sm transition-colors border',
-                phoneBlurred
-                  ? 'text-gray-500 dark:text-dark-muted hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-dark-card border-gray-100 dark:border-dark-border'
-                  : 'text-primary-600 bg-primary-50 dark:bg-primary-500/10 border-primary-200 dark:border-primary-500/20'
-              ]"
-              :title="phoneBlurred ? 'Mostrar telefones' : 'Ocultar telefones'"
-            >
-              <EyeOff v-if="phoneBlurred" class="w-3.5 h-3.5" />
-              <Eye v-else class="w-3.5 h-3.5" />
-              {{ phoneBlurred ? 'Mostrar' : 'Ocultar' }}
-            </button>
 
             <!-- Clear Filters Button -->
             <button 
@@ -411,12 +419,14 @@ onMounted(() => {
                   <input 
                     v-model="filterDateFrom" 
                     type="date" 
+                    aria-label="Data inicial"
                     class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-sm px-2.5 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
                   />
                   <span class="text-[10px] text-gray-400">até</span>
                   <input 
                     v-model="filterDateTo" 
                     type="date" 
+                    aria-label="Data final"
                     class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-sm px-2.5 py-1.5 text-xs text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-400"
                   />
                 </div>
@@ -455,7 +465,7 @@ onMounted(() => {
                 
                 <!-- Telefone -->
                 <td class="px-6 py-4">
-                  <span class="text-gray-400 dark:text-dark-muted text-sm font-mono" :class="{ 'blur-sm select-none': phoneBlurred }">
+                  <span class="text-gray-400 dark:text-dark-muted text-sm font-mono">
                     {{ lead.phone }}
                   </span>
                 </td>
@@ -571,6 +581,7 @@ onMounted(() => {
     :model-value="showModal"
     @update:model-value="showModal = $event"
     :lead="selectedLead"
+    :stages="stages"
     @update-status="handleStatusUpdate"
     @save-notes="handleNotesUpdate"
   />

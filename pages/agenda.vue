@@ -75,7 +75,7 @@ const isToday = (date: Date) => {
   return date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear()
 }
 
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 const dbAppointments = ref<any[]>([])
 
 const fetchAppointments = async () => {
@@ -148,7 +148,7 @@ const getAppointments = (dayDate: Date, hour: string) => {
 }
 
 // Get status info
-const getStatusTheme = (statusStr: string) => statuses.find(s => s.id === statusStr) || statuses[0]
+const getStatusTheme = (statusStr: string): any => statuses.find(s => s.id === statusStr) || statuses[0]
 
 // Modal Actions
 const openAppointmentModal = (apt: any) => {

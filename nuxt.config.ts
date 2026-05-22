@@ -4,7 +4,19 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
   supabase: {
-    redirect: false
+    useSsrCookies: true,
+    redirect: true,
+    redirectOptions: {
+      login: '/login',
+      callback: '/confirm',
+      exclude: ['/cadastro', '/catalogo', '/catalogo/**', '/_nuxt/**', '/favicon.ico'],
+      saveRedirectToCookie: true,
+    },
+    cookieOptions: {
+      maxAge: 60 * 60 * 8,
+      sameSite: 'lax',
+      secure: true,
+    },
   },
   app: {
     head: {

@@ -8,7 +8,7 @@ import type { Cliente, CrmStatus } from '@/types/crm'
 import { useSupabaseClient } from '#imports'
 
 const { mainMargin } = useSidebarState()
-const supabase = useSupabaseClient()
+const supabase = useSupabaseClient<any>()
 
 // State
 const currentView = ref<'kanban' | 'table'>('kanban')
@@ -41,16 +41,32 @@ const fetchLeads = async () => {
 }
 
 const handleStatusUpdate = async (id: string, newStage: any) => {
+  let stageObj = newStage
+  if (typeof newStage === 'string') {
+    stageObj = stages.value.find((s: any) => s.estagio === newStage)
+  }
+  
+  if (!stageObj) {
+    console.error('Stage not found for status update:', newStage)
+    return
+  }
+
   const lead = leads.value.find((l: any) => l.id === id)
+  const isQual = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(stageObj.estagio)
   if (lead) {
-    lead.stage_id = newStage.id
-    lead.stage = newStage.estagio
+    lead.stage_id = stageObj.id
+    lead.stage = stageObj.estagio
+    lead.is_qualified = isQual
   }
   try {
-    await supabase.from('leads').update({
-      stage_id: newStage.id,
-      stage: newStage.estagio
+    const { error: updateError } = await supabase.from('leads').update({
+      stage_id: stageObj.id,
+      stage: stageObj.estagio
     }).eq('id', id)
+    
+    if (updateError) {
+      console.error('Error updating status in DB:', updateError)
+    }
   } catch (err) {
     console.error('Error updating status:', err)
   }
@@ -59,6 +75,10 @@ const handleStatusUpdate = async (id: string, newStage: any) => {
 const openLeadDetails = (lead: Cliente) => {
   selectedLead.value = lead
   showModal.value = true
+}
+
+const openChat = (leadId: string) => {
+  navigateTo(`/chats?clientId=${leadId}`)
 }
 
 const handleNotesUpdate = async (id: string, notes: string) => {
@@ -182,17 +202,18 @@ onUnmounted(() => {
             v-else 
             :leads="leads"
             @view-details="openLeadDetails"
+            @open-chat="openChat"
           />
         </Transition>
       </div>
     </main>
   </div>
 
-  <!-- Lead Details Modal -->
   <LeadDetailsModal
     :model-value="showModal"
     @update:model-value="showModal = $event"
     :lead="selectedLead"
+    :stages="stages"
     @update-status="handleStatusUpdate"
     @save-notes="handleNotesUpdate"
   />

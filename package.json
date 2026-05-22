@@ -1,5 +1,5 @@
 {
-  "name": "crmDataImpetus",
+  "name": "toppneus",
   "type": "module",
   "private": true,
   "scripts": {
@@ -18,5 +18,8 @@
     "vue": "^3.5.27",
     "vue-draggable-plus": "^0.6.1",
     "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
   }
 }
