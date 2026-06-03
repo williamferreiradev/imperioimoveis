@@ -21,8 +21,8 @@ import {
 
 const router = useRouter()
 const { isCollapsed, toggleSidebar } = useSidebarState()
-const user = { user_metadata: { full_name: 'Usuário Demo' } }
 const supabase = useSupabaseClient<any>()
+const currentUser = useSupabaseUser()
 
 const leadsCount = ref(0)
 const clinicId = ref<string | null>(null)
@@ -92,10 +92,10 @@ const navigation = computed(() => [
     { name: 'Imóveis', icon: Building, route: '/inventario' },
     { name: 'Conversas', icon: MessageSquare, route: '/chats' },
     { name: 'Relatórios', icon: BarChart3, route: '/relatorios' },
-    { name: 'Reativar Interessados', icon: RefreshCw, route: '/reativacao' },
+    { name: 'Reativar Interessados', icon: RefreshCw, route: '#', badge: 'PRO', disabled: true },
   ]},
   { name: 'ADMINISTRAÇÃO', items: [
-    { name: 'Catálogo Público', icon: Globe, route: '/catalogo', external: true },
+    { name: 'Catálogo Público', icon: Globe, route: '#', badge: 'PRO', disabled: true },
     { name: 'Configurações', icon: Settings, route: '/configuracoes' },
   ]}
 ])
@@ -150,7 +150,8 @@ const handleLogout = async () => {
               :to="item.route" 
               :class="[
                 'flex items-center rounded-sm text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50/50 dark:hover:bg-white/5 sidebar-transition group relative border-l-2 border-transparent',
-                isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2.5'
+                isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2.5',
+                (item as any).disabled ? 'opacity-50 pointer-events-none cursor-not-allowed' : ''
               ]"
               active-class="!text-primary-500 !border-primary-500 !font-semibold bg-gray-50/20 dark:bg-white/5"
               :title="isCollapsed ? item.name : undefined"
@@ -196,14 +197,14 @@ const handleLogout = async () => {
         ]"
       >
         <!-- Avatar -->
-        <div class="w-9 h-9 rounded-sm bg-primary-50 dark:bg-primary-500/10 border border-primary-100 dark:border-primary-500/20 flex items-center justify-center text-primary-600 dark:text-primary-400 font-bold text-sm flex-shrink-0">
-          {{ user?.user_metadata?.full_name?.charAt(0) || 'U' }}
+        <div class="w-9 h-9 rounded-sm bg-primary-50 dark:bg-primary-500/10 border border-primary-100 dark:border-primary-500/20 flex items-center justify-center text-primary-600 dark:text-primary-400 font-bold text-sm flex-shrink-0 uppercase">
+          {{ currentUser?.user_metadata?.full_name?.charAt(0) || currentUser?.email?.charAt(0) || 'U' }}
         </div>
         
         <template v-if="!isCollapsed">
           <div class="flex-1 min-w-0">
             <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">
-              {{ user?.user_metadata?.full_name || 'Usuário' }}
+              {{ currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'Usuário' }}
             </p>
             <p class="text-xs text-gray-400 dark:text-dark-muted">Admin</p>
           </div>

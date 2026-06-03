@@ -20,10 +20,11 @@ const messagesContainer = ref<HTMLElement | null>(null)
 const stages = ref<any[]>([
   { id: 1, estagio: 'novo', estagio_name: 'Novo Contato' },
   { id: 2, estagio: 'em_atendimento', estagio_name: 'Em Atendimento' },
-  { id: 3, estagio: 'negociacao', estagio_name: 'Em Negociação' },
+  { id: 3, estagio: 'agendamento', estagio_name: 'Agendamento' },
   { id: 4, estagio: 'visita', estagio_name: 'Visita' },
-  { id: 5, estagio: 'fechado', estagio_name: 'Venda Fechada' },
-  { id: 6, estagio: 'perdido', estagio_name: 'Perdido' }
+  { id: 5, estagio: 'negociacao', estagio_name: 'Em Negociação' },
+  { id: 6, estagio: 'fechado', estagio_name: 'Venda Fechada' },
+  { id: 7, estagio: 'perdido', estagio_name: 'Perdido' }
 ])
 
 
@@ -37,6 +38,20 @@ const handoffNumber = ref('+55 11 99999-0000')
 const editingHandoff = ref(false)
 const globalHandoffNumber = ref('+55 11 98888-0000')
 const editingGlobalHandoff = ref(false)
+
+const formatStageName = (stage: string) => {
+  if (!stage) return 'novo'
+  const map: Record<string, string> = {
+    novo: 'novo',
+    em_atendimento: 'atendimento',
+    agendamento: 'agendamento',
+    visita: 'visita',
+    negociacao: 'negociação',
+    fechado: 'fechado',
+    perdido: 'perdido'
+  }
+  return map[stage] || stage
+}
 
 // Parse message object to extract text content
 const parseMessage = (msgObj: any) => {
@@ -306,7 +321,49 @@ const generateSummary = async () => {
   if (summary) {
     summaryText.value = summary
   } else {
-    summaryText.value = `📋 **Resumo da Conversa — ${selectedChat.value.name}**\n\n• Interesse: ${selectedChat.value.estagiokanbam || 'Não informado'}\n• Status: Em análise\n• Temperatura: ⚪ Frio — aguardando mais interação\n• Próximo passo: Continuar qualificação via IA`
+    let statusText = 'Em análise'
+    let temperaturaText = '⚪ Frio — aguardando mais interação'
+    let proxPassoText = 'Continuar qualificação via IA'
+
+    switch (selectedChat.value.estagiokanbam) {
+      case 'novo':
+        statusText = 'Aguardando contato inicial'
+        temperaturaText = '⚪ Frio — lead recém-chegado'
+        proxPassoText = 'Iniciar qualificação'
+        break
+      case 'em_atendimento':
+        statusText = 'Em conversação'
+        temperaturaText = '🟡 Morno — demonstrando interesse inicial'
+        proxPassoText = 'Qualificar e direcionar para agendamento/visita'
+        break
+      case 'agendamento':
+        statusText = 'Tentando agendar'
+        temperaturaText = '🟡 Morno — em processo de agendamento'
+        proxPassoText = 'Confirmar data e horário'
+        break
+      case 'visita':
+        statusText = 'Esperando a visita'
+        temperaturaText = '🔴 Quente — visita agendada'
+        proxPassoText = 'Análise de documentos pessoalmente'
+        break
+      case 'negociacao':
+        statusText = 'Proposta em análise'
+        temperaturaText = '🔥 Muito Quente — em negociação financeira'
+        proxPassoText = 'Fechar valores e encaminhar contrato'
+        break
+      case 'fechado':
+        statusText = 'Negócio Fechado'
+        temperaturaText = '🏆 Convertido'
+        proxPassoText = 'Pós-venda e assinatura final'
+        break
+      case 'perdido':
+        statusText = 'Contato encerrado'
+        temperaturaText = '🧊 Congelado — sem interesse atual'
+        proxPassoText = 'Adicionar à lista de reativação futura'
+        break
+    }
+
+    summaryText.value = `📋 **Resumo da Conversa — ${selectedChat.value.name}**\n\n• Interesse: ${formatStageName(selectedChat.value.estagiokanbam)}\n• Status: ${statusText}\n• Temperatura: ${temperaturaText}\n• Próximo passo: ${proxPassoText}`
   }
 
   summaryLoading.value = false
@@ -366,36 +423,6 @@ onUnmounted(() => {
 
         </div>
         
-        <!-- Global Handoff Number -->
-        <div class="mb-3 p-2.5 bg-gray-50 dark:bg-dark-card rounded-xl border border-gray-100 dark:border-dark-border">
-          <div class="flex items-center gap-2 mb-1.5">
-            <PhoneForwarded class="w-3 h-3 text-primary-500" />
-            <span class="text-[10px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider">Handoff Geral</span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <input
-              v-if="editingGlobalHandoff"
-              v-model="globalHandoffNumber"
-              @blur="editingGlobalHandoff = false"
-              @keyup.enter="editingGlobalHandoff = false"
-              class="flex-1 bg-white dark:bg-dark-surface border border-primary-200 dark:border-primary-500/30 rounded-lg px-2.5 py-1 text-xs font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-400"
-              autofocus
-            />
-            <span 
-              v-else
-              @click="editingGlobalHandoff = true"
-              class="flex-1 text-xs font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:text-primary-500 transition-colors truncate"
-            >
-              {{ globalHandoffNumber }}
-            </span>
-            <button
-              @click="editingGlobalHandoff = !editingGlobalHandoff"
-              class="text-[10px] font-semibold text-primary-500 hover:text-primary-600 transition-colors px-1.5"
-            >
-              {{ editingGlobalHandoff ? 'Salvar' : 'Editar' }}
-            </button>
-          </div>
-        </div>
 
         <div class="relative">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -432,7 +459,7 @@ onUnmounted(() => {
             <div class="flex items-center justify-between mb-1">
               <div class="flex items-center gap-1.5">
                 <h3 class="font-semibold text-gray-900 dark:text-white truncate text-sm">{{ chat.name }}</h3>
-                <span v-if="chat.is_qualified" class="text-[9px] font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20 flex-shrink-0 whitespace-nowrap">qualificado</span>
+                <span class="text-[9px] font-medium bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded-md border border-emerald-100 dark:border-emerald-500/20 flex-shrink-0 whitespace-nowrap">{{ formatStageName(chat.estagiokanbam) }}</span>
               </div>
               <span class="text-[10px] text-gray-400 dark:text-dark-muted flex-shrink-0">{{ chat.timestamp }}</span>
             </div>

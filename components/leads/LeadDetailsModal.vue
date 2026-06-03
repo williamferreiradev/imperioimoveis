@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { User, Phone, Calendar, Package, X, TrendingUp } from 'lucide-vue-next'
+import { User, Phone, Calendar, Package, X, TrendingUp, Download, FileImage } from 'lucide-vue-next'
 import type { Cliente } from '@/types/crm'
 
 const props = defineProps<{
@@ -16,6 +16,47 @@ const emit = defineEmits<{
 }>()
 
 const localNotes = ref('')
+
+const documentUrls = computed(() => {
+  if (!props.lead) return []
+  const l = props.lead as any
+  const urls = [
+    l.url_cpf,
+    l.url_rg,
+    l.url_certidao,
+    l.url_residencia,
+    l.url_contracheque,
+    l.url_carteira_trabalho,
+    l.url_movimentacao
+  ]
+  return urls.filter(url => url && typeof url === 'string' && url.trim().length > 0)
+})
+
+const handleDownload = async (url: string) => {
+  try {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Network response was not ok')
+    const blob = await response.blob()
+    const blobUrl = window.URL.createObjectURL(blob)
+    
+    const a = document.createElement('a')
+    a.style.display = 'none'
+    a.href = blobUrl
+    
+    // Tenta pegar o nome do arquivo da URL ou usa um genérico
+    const filename = url.split('/').pop()?.split('?')[0] || 'documento'
+    a.download = filename
+    
+    document.body.appendChild(a)
+    a.click()
+    
+    window.URL.revokeObjectURL(blobUrl)
+    document.body.removeChild(a)
+  } catch (error) {
+    console.error('Erro ao baixar o documento via fetch. Usando fallback:', error)
+    window.open(url, '_blank')
+  }
+}
 
 // Sync state when lead changes
 watch(() => props.lead, (newLead) => {
@@ -264,6 +305,32 @@ const currentStageBadgeClasses = computed(() => {
 
             <!-- Divider -->
             <div class="h-px bg-gray-200 dark:bg-dark-border"></div>
+
+            <!-- Documents Grid -->
+            <div v-if="documentUrls.length > 0" class="space-y-3">
+              <label class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wide">Documentos Anexados</label>
+              <div class="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                <div v-for="(url, index) in documentUrls" :key="index" class="relative group rounded-sm border border-gray-200 dark:border-dark-border bg-gray-50 dark:bg-dark-bg/50 overflow-hidden aspect-square flex flex-col items-center justify-center">
+                  <!-- Mostrar imagem -->
+                  <img :src="url" alt="Documento" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" @error="(e) => { (e.target as HTMLElement).style.display = 'none'; (e.target as HTMLElement).nextElementSibling?.classList.remove('hidden') }" />
+                  
+                  <div class="hidden flex-col items-center justify-center text-gray-400 dark:text-gray-500 w-full h-full">
+                    <FileImage class="w-8 h-8 mb-1 opacity-50" />
+                    <span class="text-[10px]">Documento</span>
+                  </div>
+                  
+                  <!-- Overlay hover para o botão de baixar -->
+                  <div class="absolute inset-0 bg-gray-900/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center backdrop-blur-[2px]">
+                    <button @click.prevent="handleDownload(url)" class="bg-white dark:bg-dark-surface text-gray-900 dark:text-white p-2.5 rounded-full hover:scale-110 shadow-sm transition-transform" title="Baixar arquivo">
+                      <Download class="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Divider -->
+              <div class="h-px bg-gray-200 dark:bg-dark-border mt-6"></div>
+            </div>
 
             <!-- Actions -->
             <div class="space-y-4">
