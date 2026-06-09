@@ -375,8 +375,7 @@ const fetchData = async () => {
             time: lead.created_at,
             week: weekStart
           })
-          // 2. Qualified Lead
-          if (['em_atendimento', 'negociacao', 'visita', 'fechado'].includes(lead.stage)) {
+          if (['negociacao', 'visita'].includes(lead.stage)) {
             leadActivities.push({
               id: `lead-qual-${lead.id}`,
               type: 'lead_qualified',

@@ -40,7 +40,7 @@ const leads = ref<Lead[]>([])
 const stages = ref<any[]>([])
 const metrics = reactive({
   total: 0,
-  interested: 0,
+  appointments: 0,
   newLeads: 0,
   locked: 0
 })
@@ -119,9 +119,16 @@ const fetchData = async () => {
     fullLeadsData.value = leadsData || []
 
     let total = 0
-    let interested = 0
     let newLeads = 0
     let locked = 0
+
+    const { count: appointmentsCount, error: apptError } = await supabase
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+
+    if (apptError) {
+      console.error('Error fetching appointments:', apptError)
+    }
 
     const now = new Date()
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -130,7 +137,6 @@ const fetchData = async () => {
       total++
       
       const isInterested = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(item.stage)
-      if (isInterested) interested++
       
       const isLocked = item.agent_active === false
       if (isLocked) locked++
@@ -151,7 +157,7 @@ const fetchData = async () => {
     })
 
     metrics.total = total
-    metrics.interested = interested
+    metrics.appointments = appointmentsCount || 0
     metrics.newLeads = newLeads
     metrics.locked = locked
 
@@ -270,7 +276,7 @@ onMounted(() => {
           <div class="flex justify-between items-start mb-3">
             <div>
               <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Visitas Agendadas</p>
-              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics.interested }}</h3>
+              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics.appointments }}</h3>
             </div>
             <div class="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-sm text-emerald-500 group-hover:scale-110 transition-transform">
               <TrendingUp class="w-5 h-5" />

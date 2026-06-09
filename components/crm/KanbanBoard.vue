@@ -99,7 +99,7 @@ onUnmounted(() => {
     <div 
       v-for="col in stages" 
       :key="col.id" 
-      class="min-w-[300px] w-[300px] flex flex-col"
+      class="min-w-[300px] w-[300px] flex flex-col h-full"
     >
       <!-- Column Header -->
       <div class="flex items-center justify-between mb-4 px-1">
@@ -119,7 +119,7 @@ onUnmounted(() => {
         :group="{ name: 'crm-leads' }"
         :animation="200"
         ghost-class="ghost-card"
-        class="flex-1 flex flex-col gap-3 min-h-[100px] p-1"
+        class="flex-1 flex flex-col gap-3 min-h-[100px] p-1 overflow-y-auto hide-scrollbar"
         @start="onDragStart"
         @end="onDragEnd"
         @change="(e) => handleDragChange(e, col)"
@@ -127,17 +127,17 @@ onUnmounted(() => {
         <div 
           v-for="lead in localColumns[col.id]"
           :key="lead.id" 
-          class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100/50 dark:border-dark-border/50 rounded-sm p-5 cursor-grab active:cursor-grabbing shadow-card hover:shadow-luxury hover:-translate-y-1 transition-all duration-300 group flex flex-col gap-4 relative overflow-hidden"
+          class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100/50 dark:border-dark-border/50 rounded-2xl p-5 cursor-grab active:cursor-grabbing shadow-card hover:shadow-luxury hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between relative overflow-hidden h-[195px] shrink-0"
         >
           <!-- Subtle top accent -->
           <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-400 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
 
           <!-- Header: Avatar + Name -->
           <div class="flex items-center gap-3">
-            <div v-if="lead.media_url" class="w-10 h-10 rounded-sm flex-shrink-0 overflow-hidden border border-gray-100 dark:border-dark-border">
+            <div v-if="lead.media_url" class="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden border border-gray-100 dark:border-dark-border">
               <img :src="lead.media_url" :alt="lead.name || 'Avatar'" class="w-full h-full object-cover" />
             </div>
-            <div v-else class="w-10 h-10 rounded-sm bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center text-sm font-serif font-bold text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-500/20">
+            <div v-else class="w-12 h-12 rounded-xl bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center text-lg font-serif font-bold text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-500/20">
               {{ (lead.name || 'D').charAt(0).toUpperCase() }}
             </div>
             <div class="flex-1 min-w-0">
@@ -145,7 +145,7 @@ onUnmounted(() => {
             </div>
             <button 
               @click="emit('view-details', lead)"
-              class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-sm transition-all opacity-0 group-hover:opacity-100 bg-white/50 dark:bg-dark-bg/50 backdrop-blur-sm"
+              class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100 bg-white/50 dark:bg-dark-bg/50 backdrop-blur-sm"
               title="Ver Detalhes"
             >
               <Eye class="w-4 h-4" />
@@ -153,22 +153,21 @@ onUnmounted(() => {
           </div>
 
           <!-- Phone -->
-          <div class="flex items-center gap-2 text-gray-500 dark:text-dark-muted text-xs bg-gray-50/80 dark:bg-dark-card/80 p-2.5 rounded-sm border border-gray-100/50 dark:border-dark-border/50">
-             <Phone class="w-3.5 h-3.5 flex-shrink-0 text-primary-400" />
+          <div class="flex items-center gap-2 text-gray-500 dark:text-dark-muted text-sm bg-gray-50/80 dark:bg-dark-card/80 p-3 rounded-xl border border-gray-100/50 dark:border-dark-border/50">
+             <Phone class="w-4 h-4 flex-shrink-0 text-primary-400" />
              <span class="font-mono tracking-wider">{{ lead.phone || 'Sem número' }}</span>
           </div>
 
           <!-- Footer: Badges -->
           <div class="flex items-center justify-between">
-            <template v-if="lead.stage === 'novo' || lead.stage === 'negociacao'"></template>
             <span 
-              v-else-if="lead.stage === 'em_atendimento'" 
+              v-if="lead.stage === 'novo' || lead.stage === 'em_atendimento'" 
               class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-dark-card text-gray-400 shadow-sm"
             >
               Não qualificado
             </span>
             <span 
-              v-else-if="lead.stage === 'visita' || lead.stage === 'qualificado' || lead.stage === 'agendado'" 
+              v-else-if="lead.stage === 'negociacao' || lead.stage === 'visita'" 
               class="text-[10px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 shadow-sm"
             >
               Qualificado
@@ -226,6 +225,14 @@ onUnmounted(() => {
 :root.dark .ghost-card {
   background: #1F2937;
   border: 1px dashed #374151;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 .kanban-scroll {
