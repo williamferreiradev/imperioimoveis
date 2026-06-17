@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { MessageSquare, KanbanSquare, Table as TableIcon } from 'lucide-vue-next'
+import { MessageSquare, KanbanSquare, Table as TableIcon, Download } from 'lucide-vue-next'
 import KanbanBoard from '@/components/crm/KanbanBoard.vue'
 import LeadTable from '@/components/crm/LeadTable.vue'
 import LeadDetailsModal from '@/components/leads/LeadDetailsModal.vue'
@@ -18,6 +18,33 @@ const loading = ref(true)
 const error = ref<any>(null)
 const showModal = ref(false)
 const selectedLead = ref<Cliente | null>(null)
+
+// Export Logic
+const downloadCSV = () => {
+  const columns = [
+    'id', 'name', 'phone', 'stage', 'agent_active', 'created_at', 'source', 'expected_value', 'about', 'ativo', 'stage_id', 'ultima_mensagem_at', 'corretor_id', 'tipo_imovel', 'localizacao', 'situacao_nome', 'profissao', 'tempo_trabalho', 'renda_mensal', 'tipo_renda', 'doc_cpf', 'doc_rg', 'doc_certidao', 'doc_residencia', 'doc_carteira_trabalho', 'doc_contracheque', 'doc_movimentacao', 'url_cpf', 'url_rg', 'url_certidao', 'url_residencia', 'url_contracheque', 'dataHandoff', 'estado_civil', 'endereco_atual', 'url_carteira_trabalho', 'url_movimentacao', 'last_followup_status', 'last_mensagem_followup_at'
+  ];
+
+  const escapeCSV = (value: any) => {
+    if (value === null || value === undefined) return '""';
+    const stringValue = String(value);
+    return '"' + stringValue.replace(/"/g, '""') + '"';
+  };
+
+  const header = columns.join(',') + "\r\n";
+  const rows = leads.value.map(lead => columns.map(col => escapeCSV(lead[col])).join(',')).join("\r\n");
+  const csvContent = "\uFEFF" + header + rows;
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", `leads_export_${new Date().toISOString().split('T')[0]}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 // Fetch Data - REAL SUPABASE
 const fetchLeads = async () => {
@@ -160,27 +187,36 @@ onUnmounted(() => {
           </div>
         </div>
         
-        <!-- View Toggle -->
-        <div class="bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border shadow-card flex gap-1 transition-colors duration-300">
+        <div class="flex items-center gap-3">
           <button 
-            @click="currentView = 'kanban'"
-            :class="[
-              'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-              currentView === 'kanban' ? 'bg-primary-500 text-white shadow-luxury' : 'text-gray-500 dark:text-dark-muted hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
-            ]"
+            @click="downloadCSV"
+            class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 text-sm font-medium transition-colors shadow-sm"
           >
-            <KanbanSquare class="w-4 h-4" /> Kanban
+            <Download class="w-4 h-4 text-primary-500" /> <span class="hidden sm:inline">Exportar CSV</span>
           </button>
-          
-          <button 
-            @click="currentView = 'table'"
-            :class="[
-               'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
-               currentView === 'table' ? 'bg-primary-500 text-white shadow-luxury' : 'text-gray-500 dark:text-dark-muted hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
-            ]"
-          >
-            <TableIcon class="w-4 h-4" /> Tabela
-          </button>
+
+          <!-- View Toggle -->
+          <div class="bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border shadow-card flex gap-1 transition-colors duration-300">
+            <button 
+              @click="currentView = 'kanban'"
+              :class="[
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                currentView === 'kanban' ? 'bg-primary-500 text-white shadow-luxury' : 'text-gray-500 dark:text-dark-muted hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
+              ]"
+            >
+              <KanbanSquare class="w-4 h-4" /> Kanban
+            </button>
+            
+            <button 
+              @click="currentView = 'table'"
+              :class="[
+                 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                 currentView === 'table' ? 'bg-primary-500 text-white shadow-luxury' : 'text-gray-500 dark:text-dark-muted hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
+              ]"
+            >
+              <TableIcon class="w-4 h-4" /> Tabela
+            </button>
+          </div>
         </div>
       </header>
 
