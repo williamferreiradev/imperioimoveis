@@ -33,6 +33,7 @@ interface Lead {
   product: string
   status: 'active' | 'locked'
   media_url?: string
+  created_at: string
 }
 
 // Reactive State
@@ -72,12 +73,48 @@ const filteredLeads = computed(() => {
   if (filterInterest.value !== 'all') {
     result = result.filter(l => filterInterest.value === 'yes' ? l.interested : !l.interested)
   }
+
+  if (filterDateFrom.value) {
+    const fromDate = new Date(`${filterDateFrom.value}T00:00:00`)
+    result = result.filter(l => {
+      const lDate = new Date(l.created_at)
+      return lDate >= fromDate
+    })
+  }
+
+  if (filterDateTo.value) {
+    const toDate = new Date(`${filterDateTo.value}T23:59:59`)
+    result = result.filter(l => {
+      const lDate = new Date(l.created_at)
+      return lDate <= toDate
+    })
+  }
   
   return result
 })
 
 // Computed pagination
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredLeads.value.length / itemsPerPage)))
+
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+  
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, '...', total]
+  }
+  
+  if (current >= total - 3) {
+    return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
+  }
+  
+  return [1, '...', current - 1, current, current + 1, '...', total]
+})
+
 const paginatedLeads = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage
   return filteredLeads.value.slice(start, start + itemsPerPage)
@@ -152,7 +189,8 @@ const fetchData = async () => {
         phone: item.phone || '',
         interested: isInterested,
         product: item.source || 'Não informado',
-        status: isLocked ? 'locked' : 'active'
+        status: isLocked ? 'locked' : 'active',
+        created_at: item.created_at
       }
     })
 
@@ -256,7 +294,7 @@ onMounted(() => {
       </header>
 
       <!-- Metrics Section -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
         <!-- Card 1: Total de Leads -->
         <div class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100 dark:border-dark-border p-6 rounded-sm shadow-card hover:shadow-card-hover hover:border-primary-500/30 transition-all duration-300 group">
           <div class="flex justify-between items-start mb-3">
@@ -299,19 +337,6 @@ onMounted(() => {
           <p class="text-xs text-gray-400 dark:text-dark-muted">Novos contatos esta semana</p>
         </div>
 
-        <!-- Card 4: Contratos de Aluguel -->
-        <div class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100 dark:border-dark-border p-6 rounded-sm shadow-card hover:shadow-card-hover hover:border-amber-500/30 transition-all duration-300 group">
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Contratos (Mês)</p>
-              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics.locked }}</h3>
-            </div>
-            <div class="p-2.5 bg-amber-50 dark:bg-amber-500/10 rounded-sm text-amber-500 group-hover:scale-110 transition-transform">
-              <AlertCircle class="w-5 h-5" />
-            </div>
-          </div>
-          <p class="text-xs text-gray-400 dark:text-dark-muted">Contratos de aluguel assinados</p>
-        </div>
       </div>
 
       <!-- Recent Leads Table -->
@@ -449,7 +474,7 @@ onMounted(() => {
                 <th class="px-6 py-4 font-medium">Nome</th>
                 <th class="px-6 py-4 font-medium">Telefone</th>
                 <th class="px-6 py-4 font-medium">Interessado</th>
-                <th class="px-6 py-4 font-medium">Produto</th>
+                <th class="px-6 py-4 font-medium">Data Entrada</th>
                 <th class="px-6 py-4 font-medium">Status</th>
                 <th class="px-6 py-4 font-medium text-right">Ações</th>
               </tr>
@@ -486,9 +511,9 @@ onMounted(() => {
                   </span>
                 </td>
 
-                <!-- Produto -->
+                <!-- Data Entrada -->
                 <td class="px-6 py-4 text-sm text-gray-400 dark:text-dark-muted">
-                  {{ lead.product }}
+                  {{ new Date(lead.created_at).toLocaleDateString('pt-BR') }}
                 </td>
 
                 <!-- Status -->
@@ -549,19 +574,23 @@ onMounted(() => {
             </button>
             
             <div class="flex gap-1">
-              <button 
-                v-for="page in totalPages" 
-                :key="page" 
-                @click="goToPage(page)"
-                :class="[
-                  'w-8 h-8 rounded-lg text-xs font-medium transition-all',
-                  page === currentPage 
-                    ? 'bg-primary-500 text-white shadow-sm' 
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-card'
-                ]"
-              >
-                {{ page }}
-              </button>
+              <template v-for="(page, index) in visiblePages" :key="index">
+                <span v-if="page === '...'" class="w-8 h-8 flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs font-medium">
+                  ...
+                </span>
+                <button 
+                  v-else
+                  @click="goToPage(page as number)"
+                  :class="[
+                    'w-8 h-8 rounded-lg text-xs font-medium transition-all flex items-center justify-center',
+                    page === currentPage 
+                      ? 'bg-primary-500 text-white shadow-sm' 
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-card'
+                  ]"
+                >
+                  {{ page }}
+                </button>
+              </template>
             </div>
 
             <button 

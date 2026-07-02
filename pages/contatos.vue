@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSupabaseClient } from '#imports'
-import { User, Phone, Search, Filter, Calendar } from 'lucide-vue-next'
+import { User, Phone, Search, Filter, Calendar, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import LeadDetailsModal from '@/components/leads/LeadDetailsModal.vue'
 import type { Cliente } from '@/types/crm'
 
@@ -17,9 +17,12 @@ const showModal = ref(false)
 const selectedContact = ref<Cliente | null>(null)
 
 const showFilters = ref(false)
-const filterQualified = ref<'all' | 'yes' | 'no'>('all')
+const filterStage = ref<string>('all')
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
+
+const currentPage = ref(1)
+const itemsPerPage = 10
 
 // Fetch contacts REAL Supabase
 const fetchContacts = async () => {
@@ -79,20 +82,60 @@ const filteredContacts = computed(() => {
     )
   }
 
-  if (filterQualified.value !== 'all') {
+  if (filterStage.value !== 'all') {
+    result = result.filter((c: any) => c.stage === filterStage.value)
+  }
+
+  if (filterDateFrom.value) {
+    const fromDate = new Date(`${filterDateFrom.value}T00:00:00`)
     result = result.filter((c: any) => {
-      const isQualified = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(c.stage)
-      return filterQualified.value === 'yes' ? isQualified : !isQualified
+      const cDate = new Date(c.created_at)
+      return cDate >= fromDate
+    })
+  }
+
+  if (filterDateTo.value) {
+    const toDate = new Date(`${filterDateTo.value}T23:59:59`)
+    result = result.filter((c: any) => {
+      const cDate = new Date(c.created_at)
+      return cDate <= toDate
     })
   }
 
   return result
 })
 
-const hasActiveFilters = computed(() => filterQualified.value !== 'all' || filterDateFrom.value || filterDateTo.value)
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredContacts.value.length / itemsPerPage)))
+
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  const current = currentPage.value
+  
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  if (current <= 4) return [1, 2, 3, 4, 5, '...', total]
+  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
+  return [1, '...', current - 1, current, current + 1, '...', total]
+})
+
+const paginatedContacts = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage
+  return filteredContacts.value.slice(start, start + itemsPerPage)
+})
+
+const goToPage = (page: number) => {
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page
+  }
+}
+
+watch([filterStage, filterDateFrom, filterDateTo, searchQuery], () => {
+  currentPage.value = 1
+})
+
+const hasActiveFilters = computed(() => filterStage.value !== 'all' || filterDateFrom.value || filterDateTo.value)
 
 const clearFilters = () => {
-  filterQualified.value = 'all'
+  filterStage.value = 'all'
   filterDateFrom.value = ''
   filterDateTo.value = ''
 }
@@ -246,15 +289,23 @@ onUnmounted(() => {
         <Transition name="slide">
           <div v-if="showFilters" class="px-6 py-4 border-b border-gray-200 dark:border-dark-border bg-gray-50/80 dark:bg-dark-card/30">
             <div class="flex flex-wrap items-center gap-6">
-              <!-- Qualified Filter -->
-              <div class="flex items-center gap-3">
-                <span class="text-[11px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider">Status</span>
-                <div class="flex gap-1.5 bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border">
+              <!-- Status Filter -->
+              <div class="flex items-center gap-3 overflow-x-auto max-w-full pb-2 md:pb-0">
+                <span class="text-[11px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider flex-shrink-0">Status</span>
+                <div class="flex gap-1.5 bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border min-w-max">
                   <button 
-                    v-for="opt in [{ value: 'all', label: 'Todos' }, { value: 'yes', label: 'Qualificado' }, { value: 'no', label: 'Pendente' }]"
+                    v-for="opt in [
+                      { value: 'all', label: 'Todos' }, 
+                      { value: 'novo', label: 'Novo' }, 
+                      { value: 'em_atendimento', label: 'Em Atendimento' },
+                      { value: 'negociacao', label: 'Negociação' },
+                      { value: 'visita', label: 'Visita' },
+                      { value: 'fechado', label: 'Fechado' },
+                      { value: 'perdido', label: 'Perdido' }
+                    ]"
                     :key="opt.value"
-                    @click="filterQualified = opt.value as any"
-                    :class="['px-3 py-1.5 rounded-lg text-xs font-semibold transition-all', filterQualified === opt.value ? 'bg-primary-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-card']"
+                    @click="filterStage = opt.value"
+                    :class="['px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap', filterStage === opt.value ? 'bg-primary-500 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-card']"
                   >
                     {{ opt.label }}
                   </button>
@@ -311,7 +362,7 @@ onUnmounted(() => {
           <!-- Contact Rows -->
           <div
             v-else
-            v-for="contact in filteredContacts"
+            v-for="contact in paginatedContacts"
             :key="contact.id"
             @click="openContactDetails(contact)"
             class="px-6 py-4 bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-all group grid grid-cols-12 gap-4 items-center"
@@ -353,6 +404,62 @@ onUnmounted(() => {
                  Travado
               </span>
             </div>
+          </div>
+        </div>
+
+        <!-- Footer / Pagination -->
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-dark-border flex justify-between items-center bg-white dark:bg-dark-surface">
+          <p class="text-xs text-gray-400 dark:text-dark-muted">
+            Mostrando <span class="text-gray-700 dark:text-white font-medium">{{ filteredContacts.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0 }}-{{ Math.min(currentPage * itemsPerPage, filteredContacts.length) }}</span> 
+            de {{ filteredContacts.length }} interessados
+          </p>
+          
+          <div class="flex items-center gap-2">
+            <button 
+              @click="goToPage(currentPage - 1)" 
+              :disabled="currentPage <= 1"
+              :class="[
+                'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                currentPage <= 1 
+                  ? 'text-gray-300 dark:text-gray-600 border-gray-100 dark:border-dark-border cursor-not-allowed' 
+                  : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card hover:border-gray-300'
+              ]"
+            >
+              <ChevronLeft class="w-3.5 h-3.5" /> Anterior
+            </button>
+            
+            <div class="flex gap-1">
+              <template v-for="(page, index) in visiblePages" :key="index">
+                <span v-if="page === '...'" class="w-8 h-8 flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs font-medium">
+                  ...
+                </span>
+                <button 
+                  v-else
+                  @click="goToPage(page as number)"
+                  :class="[
+                    'w-8 h-8 rounded-lg text-xs font-medium transition-all flex items-center justify-center',
+                    page === currentPage 
+                      ? 'bg-primary-500 text-white shadow-sm' 
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-card'
+                  ]"
+                >
+                  {{ page }}
+                </button>
+              </template>
+            </div>
+
+            <button 
+              @click="goToPage(currentPage + 1)" 
+              :disabled="currentPage >= totalPages"
+              :class="[
+                'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                currentPage >= totalPages 
+                  ? 'text-gray-300 dark:text-gray-600 border-gray-100 dark:border-dark-border cursor-not-allowed' 
+                  : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card hover:border-gray-300'
+              ]"
+            >
+              Próxima <ChevronRight class="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
