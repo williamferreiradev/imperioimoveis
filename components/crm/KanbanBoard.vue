@@ -87,6 +87,18 @@ onMounted(() => {
   document.addEventListener('dragend', stopDragScroll)
 })
 
+const getStageColorClasses = (estagio: string) => {
+  const norm = estagio?.toLowerCase() || '';
+  if (norm.includes('novo')) return { bg: 'bg-orange-50 dark:bg-orange-500/10 border-orange-100 dark:border-orange-500/20', text: 'text-orange-700 dark:text-orange-400', dot: 'bg-orange-500' };
+  if (norm.includes('atendimento')) return { bg: 'bg-blue-50 dark:bg-blue-500/10 border-blue-100 dark:border-blue-500/20', text: 'text-blue-700 dark:text-blue-400', dot: 'bg-blue-500' };
+  if (norm.includes('negociacao') || norm.includes('negociação')) return { bg: 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-100 dark:border-indigo-500/20', text: 'text-indigo-700 dark:text-indigo-400', dot: 'bg-indigo-500' };
+  if (norm.includes('visita')) return { bg: 'bg-fuchsia-50 dark:bg-fuchsia-500/10 border-fuchsia-100 dark:border-fuchsia-500/20', text: 'text-fuchsia-700 dark:text-fuchsia-400', dot: 'bg-fuchsia-500' };
+  if (norm.includes('fechado') || norm.includes('convertido') || norm.includes('venda')) return { bg: 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-100 dark:border-emerald-500/20', text: 'text-emerald-700 dark:text-emerald-400', dot: 'bg-emerald-500' };
+  if (norm.includes('perdido')) return { bg: 'bg-red-50 dark:bg-red-500/10 border-red-100 dark:border-red-500/20', text: 'text-red-700 dark:text-red-400', dot: 'bg-red-500' };
+  
+  return { bg: 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700', text: 'text-gray-700 dark:text-gray-300', dot: 'bg-gray-500' };
+}
+
 onUnmounted(() => {
   stopDragScroll()
   document.removeEventListener('mousemove', handleDragScroll)
@@ -113,11 +125,20 @@ onUnmounted(() => {
         class="min-w-[300px] w-[300px] flex flex-col h-full"
       >
         <!-- Column Header -->
-        <div class="flex items-center justify-between mb-4 px-1">
-          <div class="flex items-center gap-2.5">
-            <div class="w-2 h-2 rounded-full bg-primary-500"></div>
-            <span class="text-sm font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide">{{ col.estagio_name || col.descricao || col.estagio }}</span>
-            <span class="bg-gray-100 dark:bg-dark-card text-gray-500 dark:text-dark-muted text-xs font-medium px-2 py-0.5 rounded-full">
+        <div class="mb-4 px-1">
+          <div 
+            :class="[
+              'flex items-center justify-between px-3 py-2.5 rounded-xl border',
+              getStageColorClasses(col.estagio).bg
+            ]"
+          >
+            <div class="flex items-center gap-2.5">
+              <div :class="['w-2.5 h-2.5 rounded-full', getStageColorClasses(col.estagio).dot]"></div>
+              <span :class="['text-xs font-bold uppercase tracking-wider', getStageColorClasses(col.estagio).text]">
+                {{ col.estagio_name || col.descricao || col.estagio }}
+              </span>
+            </div>
+            <span :class="['text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/60 dark:bg-black/20 shadow-sm', getStageColorClasses(col.estagio).text]">
               {{ localColumns[col.id]?.length || 0 }}
             </span>
           </div>

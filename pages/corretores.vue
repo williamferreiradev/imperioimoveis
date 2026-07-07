@@ -22,11 +22,14 @@ const fetchCorretores = async () => {
   try {
     const { data, error } = await supabase
       .from('corretores')
-      .select('*')
+      .select('*, leads(count)')
       .order('nome', { ascending: true })
     
     if (error) throw error
-    corretores.value = data || []
+    corretores.value = (data || []).map((c: any) => ({
+      ...c,
+      leads_count: c.leads?.[0]?.count || 0
+    }))
   } catch (err: any) {
     console.error('Erro ao carregar corretores:', err.message)
     alert('Não foi possível carregar os corretores.')
