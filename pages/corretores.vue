@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { UserCircle, Phone, Search, Filter, Pencil, Trash2, Power, Plus } from 'lucide-vue-next'
+import { UserCircle, Phone, Search, Filter, Pencil, Trash2, Power, Plus, Eye } from 'lucide-vue-next'
 import CorretorModal from '@/components/corretores/CorretorModal.vue'
+import CorretorLeadsModal from '@/components/corretores/CorretorLeadsModal.vue'
 
 const { mainMargin } = useSidebarState()
 const supabase = useSupabaseClient()
@@ -15,6 +16,9 @@ const filterStatus = ref<'todos' | 'ativo' | 'desativado'>('todos')
 
 const showModal = ref(false)
 const selectedCorretor = ref<any>(null)
+
+const showLeadsModal = ref(false)
+const selectedCorretorForLeads = ref<any>(null)
 
 // Load corretores from DB
 const fetchCorretores = async () => {
@@ -93,6 +97,11 @@ const editCorretor = (corretor: any) => {
 const openNewCorretorModal = () => {
   selectedCorretor.value = null
   showModal.value = true
+}
+
+const openLeadsModal = (corretor: any) => {
+  selectedCorretorForLeads.value = corretor
+  showLeadsModal.value = true
 }
 
 const handleSave = async (corretorData: any) => {
@@ -308,6 +317,15 @@ const deleteCorretor = async (corretor: any) => {
 
               <div class="h-6 w-px bg-gray-200 dark:bg-dark-border mx-1"></div>
 
+              <!-- View Leads Button -->
+              <button 
+                @click.stop="openLeadsModal(corretor)"
+                class="p-2 text-primary-500 hover:text-white hover:bg-primary-500 rounded-lg transition-colors border border-transparent hover:border-primary-600"
+                title="Ver Leads do Corretor"
+              >
+                <Eye class="w-4 h-4" />
+              </button>
+
               <!-- Edit Button -->
               <button 
                 @click.stop="editCorretor(corretor)"
@@ -335,6 +353,11 @@ const deleteCorretor = async (corretor: any) => {
       v-model="showModal"
       :corretor="selectedCorretor"
       @save="handleSave"
+    />
+
+    <CorretorLeadsModal
+      v-model="showLeadsModal"
+      :corretor="selectedCorretorForLeads"
     />
   </div>
 </template>
