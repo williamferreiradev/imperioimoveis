@@ -5,8 +5,8 @@ import { isLeadId, qualifiedStages, searchLeadColumns } from '@/utils/crmQueries
 import { MessageSquare, Phone, Search, FileText, Menu, X, BotOff, Bot, PhoneForwarded, ArrowLeft } from 'lucide-vue-next'
 
 const route = useRoute()
-const { mainMargin, isCollapsed } = useSidebarState()
-const threadMargin = computed(() => isCollapsed.value ? 'ml-16 sm:ml-20 xl:ml-0' : 'ml-16 sm:ml-72 xl:ml-0')
+const { desktopMargin, isCollapsed } = useSidebarState()
+const threadMargin = computed(() => isCollapsed.value ? 'lg:ml-20 xl:ml-0' : 'lg:ml-72 xl:ml-0')
 const supabase = useSupabaseClient<any>()
 
 // State
@@ -330,12 +330,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen w-full bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans flex overflow-hidden transition-colors duration-300">
+  <div class="h-dvh w-full pt-14 lg:pt-0 bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans flex overflow-hidden transition-colors duration-300">
     <Sidebar />
 
     <!-- Chat Sidebar (Left) -->
     <aside
-      :class="[mainMargin, mobileThread ? 'hidden xl:flex' : 'flex']"
+      :class="[desktopMargin, mobileThread ? 'hidden xl:flex' : 'flex']"
       class="w-full xl:w-80 xl:shrink-0 flex-col border-r border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface transition-colors duration-300"
     >
       <!-- Header -->

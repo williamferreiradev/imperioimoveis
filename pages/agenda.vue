@@ -24,7 +24,6 @@ const statuses = [
 
 // State
 const currentDate = ref(new Date())
-const viewMode = ref<'week' | 'day'>('week')
 
 // Modal State
 const isModalOpen = ref(false)
@@ -83,8 +82,11 @@ const isToday = (date: Date) => {
 
 const supabase = useSupabaseClient<any>()
 const dbAppointments = ref<any[]>([])
+const loadingAppointments = ref(true)
+const appointmentError = ref('')
 
 const fetchAppointments = async () => {
+  appointmentError.value = ''
   try {
     const { data: aps, error } = await supabase.from('appointments').select(`
       *,
@@ -93,7 +95,10 @@ const fetchAppointments = async () => {
     if (error) throw error
     dbAppointments.value = aps || []
   } catch (error) {
+    appointmentError.value = 'Não foi possível carregar os agendamentos.'
     console.error('Error fetching appointments:', error)
+  } finally {
+    loadingAppointments.value = false
   }
 }
 
@@ -122,37 +127,47 @@ onUnmounted(() => {
   }
 })
 
-// Get appointments for a specific day/hour
-const getAppointments = (dayDate: Date, hour: string) => {
-  const year = dayDate.getFullYear()
-  const month = String(dayDate.getMonth() + 1).padStart(2, '0')
-  const dateStr = String(dayDate.getDate()).padStart(2, '0')
-  const localDateStr = `${year}-${month}-${dateStr}`
+const dateKey = (date: Date) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0')
+].join('-')
 
-  return dbAppointments.value.filter(a => {
-    if (a.appointment_date !== localDateStr) return false
-    const aptHour = a.start_time ? a.start_time.substring(0, 5) : ''
-    if (aptHour !== hour) return false
-    return true
-  }).map(a => {
-    let duration = 1
-    if (a.start_time && a.end_time) {
-      const start = new Date(`1970-01-01T${a.start_time}`)
-      const end = new Date(`1970-01-01T${a.end_time}`)
-      duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
-    }
-    
-    return {
-      id: a.id,
-      patient: a.leads?.name || 'Interessado Desconhecido',
-      procedure: a.procedures?.name || a.about || 'Contato ou Consulta',
-      hour: a.start_time ? a.start_time.substring(0, 5) : hour,
-      duration: Math.max(1, duration),
-      status: a.status || 'agendado',
-      is_ai: a.created_by_ia !== false
-    }
-  })
+function mapAppointment(appointment: any) {
+  let duration = 1
+  if (appointment.start_time && appointment.end_time) {
+    const start = new Date('1970-01-01T' + appointment.start_time)
+    const end = new Date('1970-01-01T' + appointment.end_time)
+    duration = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
+  }
+  return {
+    id: appointment.id,
+    patient: appointment.leads?.name || 'Interessado Desconhecido',
+    procedure: appointment.about || 'Contato ou Consulta',
+    hour: appointment.start_time?.substring(0, 5) || 'Sem horário',
+    duration: Number.isFinite(duration) ? Math.max(1, duration) : 1,
+    status: appointment.status || 'agendado',
+    is_ai: appointment.created_by_ia !== false
+  }
 }
+
+const appointmentsByDate = computed(() => {
+  const days = new Map<string, ReturnType<typeof mapAppointment>[]>()
+  for (const appointment of dbAppointments.value) {
+    const entries = days.get(appointment.appointment_date) ?? []
+    entries.push(mapAppointment(appointment))
+    days.set(appointment.appointment_date, entries)
+  }
+  for (const entries of days.values()) entries.sort((first, second) => first.hour.localeCompare(second.hour))
+  return days
+})
+const selectedDay = computed(() => dateKey(currentDate.value))
+const dayAppointments = computed(() => appointmentsByDate.value.get(selectedDay.value) ?? [])
+const selectedDayLabel = computed(() => currentDate.value.toLocaleDateString('pt-BR', {
+  weekday: 'long', day: 'numeric', month: 'long'
+}))
+const getAppointments = (date: Date, hour: string) =>
+  appointmentsByDate.value.get(dateKey(date))?.filter(appointment => appointment.hour.slice(0, 2) === hour.slice(0, 2)) ?? []
 
 // Get status info
 const getStatusTheme = (statusStr: string): any => statuses.find(s => s.id === statusStr) || statuses[0]
@@ -184,25 +199,16 @@ const updateAppointmentMode = async () => {
   }
 }
 
-// Stats
-const todayCount = computed(() => {
-  const today = new Date()
-  const year = today.getFullYear()
-  const month = String(today.getMonth() + 1).padStart(2, '0')
-  const dateStr = String(today.getDate()).padStart(2, '0')
-  const localDateStr = `${year}-${month}-${dateStr}`
-
-  return dbAppointments.value.filter(a => a.appointment_date === localDateStr).length
-})
+const todayCount = computed(() => appointmentsByDate.value.get(dateKey(new Date()))?.length ?? 0)
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
     <Sidebar />
 
-    <main :class="[mainMargin, 'p-8 transition-all duration-300']">
+    <main :class="[mainMargin, 'p-3 sm:p-5 xl:p-8 transition-all duration-300']">
       <!-- Header -->
-      <header class="mb-6 flex items-center justify-between">
+      <header class="mb-4 flex flex-wrap items-center justify-between gap-3 lg:mb-6">
         <div class="flex items-center gap-4">
           <div class="p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500">
             <CalendarDays class="w-6 h-6" />
@@ -213,9 +219,9 @@ const todayCount = computed(() => {
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:gap-3">
           <!-- Status Legend -->
-          <div class="flex items-center gap-3 mr-4">
+          <div class="mr-2 hidden flex-wrap items-center gap-3 2xl:flex">
             <div v-for="st in statuses" :key="st.id" class="flex items-center gap-1.5">
               <div :class="['w-2.5 h-2.5 rounded-full', st.color]"></div>
               <span class="text-[11px] font-medium text-gray-500 dark:text-dark-muted">{{ st.label }}</span>
@@ -223,23 +229,57 @@ const todayCount = computed(() => {
           </div>
 
           <!-- Navigation -->
-          <button @click="goToday" class="px-3 py-1.5 text-xs font-semibold text-primary-500 bg-primary-50 dark:bg-primary-500/10 rounded-lg border border-primary-200 dark:border-primary-500/20 hover:bg-primary-100 transition-colors">
+          <button @click="goToday" class="min-h-11 px-3 text-xs font-semibold text-primary-500 bg-primary-50 dark:bg-primary-500/10 rounded-lg border border-primary-200 dark:border-primary-500/20 hover:bg-primary-100 transition-colors">
             Hoje
           </button>
-          <div class="flex items-center gap-1">
-            <button @click="prevWeek" class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-card transition-colors">
+          <div class="flex min-w-0 flex-1 items-center justify-between gap-1 rounded-lg border border-gray-200 bg-white dark:border-dark-border dark:bg-dark-surface lg:flex-none">
+            <button aria-label="Semana anterior" @click="prevWeek" class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-600 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-card transition-colors">
               <ChevronLeft class="w-4 h-4" />
             </button>
-            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 min-w-[200px] text-center">{{ weekLabel }}</span>
-            <button @click="nextWeek" class="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-card transition-colors">
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300 text-center lg:min-w-32 lg:px-2">{{ weekLabel }}</span>
+            <button aria-label="Próxima semana" @click="nextWeek" class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-600 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-dark-card transition-colors">
               <ChevronRight class="w-4 h-4" />
             </button>
           </div>
         </div>
       </header>
 
+      <p v-if="appointmentError" role="alert" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-200">
+        {{ appointmentError }} <button type="button" class="underline" @click="fetchAppointments">Tentar novamente</button>
+      </p>
+
+      <section class="lg:hidden" aria-label="Agenda por dia">
+        <div class="grid grid-cols-7 gap-1 rounded-xl border border-gray-200 bg-white p-1 dark:border-dark-border dark:bg-dark-surface">
+          <button v-for="(day, index) in weekDays" :key="dateKey(day)" type="button" :aria-pressed="dateKey(day) === selectedDay"
+            :aria-label="day.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })"
+            :class="['flex min-h-14 min-w-0 flex-col items-center justify-center rounded-lg text-xs font-semibold',
+              dateKey(day) === selectedDay ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-dark-card']"
+            @click="currentDate = day">
+            <span>{{ dayLabels[index] }}</span>
+            <span class="text-base tabular-nums">{{ day.getDate() }}</span>
+          </button>
+        </div>
+        <h2 class="mb-3 mt-5 text-base font-semibold capitalize">{{ selectedDayLabel }}</h2>
+        <p v-if="loadingAppointments" role="status" class="text-sm text-gray-600 dark:text-dark-muted">Carregando agendamentos…</p>
+        <p v-else-if="!appointmentError && !dayAppointments.length" class="rounded-xl border border-dashed border-gray-200 p-5 text-sm text-gray-600 dark:border-dark-border dark:text-dark-muted">Nenhum agendamento neste dia.</p>
+        <ul v-else class="space-y-2">
+          <li v-for="apt in dayAppointments" :key="apt.id">
+            <button type="button" @click="openAppointmentModal(apt)"
+              class="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-xl border border-gray-200 bg-white px-3 py-3 text-left dark:border-dark-border dark:bg-dark-surface">
+              <span class="rounded-lg bg-primary-50 px-2 py-1 text-sm font-bold tabular-nums text-primary-700 dark:bg-primary-500/10 dark:text-primary-400">{{ apt.hour }}</span>
+              <span class="min-w-0">
+                <span class="block break-words text-sm font-semibold">{{ apt.patient }}</span>
+                <span class="mb-2 block break-words text-sm text-gray-600 dark:text-dark-muted">{{ apt.procedure }}</span>
+                <span :class="['inline-flex rounded-md border px-2 py-0.5 text-xs', getStatusTheme(apt.status).light]">{{ getStatusTheme(apt.status).label }}</span>
+                <span v-if="apt.is_ai" class="ml-2 text-xs font-medium text-primary-600 dark:text-primary-400">IA</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </section>
+
       <!-- Calendar Grid -->
-      <div class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl overflow-hidden">
+      <div class="hidden lg:block bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl overflow-hidden">
         <!-- Day Headers -->
         <div class="grid grid-cols-[60px_repeat(7,1fr)] border-b border-gray-100 dark:border-dark-border">
           <div class="p-2"></div>
@@ -262,7 +302,7 @@ const todayCount = computed(() => {
         </div>
 
         <!-- Time Slots -->
-        <div class="max-h-[calc(100vh-260px)] overflow-y-auto">
+        <div class="max-h-[calc(100dvh-260px)] overflow-y-auto">
           <div v-for="hour in hours" :key="hour" class="grid grid-cols-[60px_repeat(7,1fr)] border-b border-gray-50 dark:border-dark-border/50 min-h-[70px]">
             <!-- Hour Label -->
             <div class="p-2 text-[11px] font-medium text-gray-400 dark:text-dark-muted text-right pr-3 pt-1">

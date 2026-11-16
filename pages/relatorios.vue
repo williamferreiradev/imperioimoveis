@@ -214,14 +214,14 @@ onMounted(fetchData)
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
     <Sidebar />
 
-    <main :class="[mainMargin, 'p-8 transition-all duration-300']">
+    <main :class="[mainMargin, 'min-w-0 p-3 sm:p-5 xl:p-8 transition-all duration-300']">
       <!-- Header -->
-      <header class="mb-8 flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-4">
-          <div class="p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500">
+      <header class="mb-4 flex flex-wrap sm:mb-8 items-center justify-between gap-3">
+        <div class="flex min-w-0 items-start gap-3">
+          <div class="shrink-0 p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500">
             <BarChart3 class="w-6 h-6" />
           </div>
           <div>
@@ -230,12 +230,12 @@ onMounted(fetchData)
           </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
           <!-- Week Dropdown (scalable) -->
-          <div class="relative">
+          <div class="relative min-w-0 flex-1 sm:flex-none">
             <button 
-              @click="weekDropdownOpen = !weekDropdownOpen"
-              class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-card transition-all shadow-sm min-w-[200px] justify-between"
+              @click="weekDropdownOpen = !weekDropdownOpen" :aria-expanded="weekDropdownOpen"
+              class="flex min-h-11 w-full min-w-0 items-center gap-2 px-3 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-card transition-all shadow-sm sm:min-w-[200px] justify-between"
             >
               <Calendar class="w-4 h-4 text-primary-500" />
               <span>{{ currentWeekShort }}</span>
@@ -243,13 +243,13 @@ onMounted(fetchData)
             </button>
             
             <Transition name="dropdown">
-              <div v-if="weekDropdownOpen" class="absolute right-0 top-full mt-1.5 w-64 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl shadow-lg z-20 py-1 max-h-[300px] overflow-y-auto">
+              <div v-if="weekDropdownOpen" class="absolute left-0 top-full mt-1.5 w-64 max-w-[calc(100vw-1.5rem)] sm:left-auto sm:right-0 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl shadow-lg z-20 py-1 max-h-[300px] overflow-y-auto">
                 <button
                   v-for="w in weeks"
                   :key="w.key"
                   @click="selectWeek(w.key)"
                   :class="[
-                    'w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-dark-card transition-colors',
+                    'w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-dark-card transition-colors min-h-11',
                     selectedWeek === w.key ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 font-semibold' : 'text-gray-700 dark:text-gray-300'
                   ]"
                 >
@@ -263,7 +263,7 @@ onMounted(fetchData)
             </Transition>
           </div>
 
-          <button @click="exportWeek" :disabled="!activeWeek" class="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-xl shadow-sm text-xs font-semibold hover:bg-primary-600 transition-all">
+          <button @click="exportWeek" :disabled="!activeWeek" class="flex min-h-11 shrink-0 items-center gap-2 px-3 bg-primary-500 text-white rounded-xl shadow-sm text-xs font-semibold hover:bg-primary-600 transition-all">
             <Download class="w-3.5 h-3.5" />
             Exportar
           </button>
@@ -280,20 +280,20 @@ onMounted(fetchData)
       </div>
       <template v-else-if="activeWeek">
         <!-- Week Title Banner -->
-        <div class="mb-6 flex items-center gap-3">
-          <div class="flex items-center gap-2 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl px-5 py-3">
+        <div class="mb-4 flex flex-wrap items-center gap-2 sm:mb-6">
+          <div class="flex items-center gap-2 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl px-3 py-2.5 sm:px-5 sm:py-3">
             <Calendar class="w-5 h-5 text-primary-500" />
-            <span class="text-lg font-bold text-gray-900 dark:text-white">{{ currentReport.title || currentWeekLabel }}</span>
+            <span class="text-base font-bold sm:text-lg text-gray-900 dark:text-white">{{ currentReport.title || currentWeekLabel }}</span>
           </div>
           <span class="text-xs text-gray-400 dark:text-dark-muted">{{ currentMetrics.totalLeads || 0 }} leads nesta semana</span>
         </div>
 
         <!-- Metric Cards Grid -->
-        <div class="grid grid-cols-6 gap-4 mb-6">
+        <div class="mb-6 grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4 2xl:grid-cols-6">
           <div
             v-for="card in metricCards"
             :key="card.title"
-            class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-4 hover:shadow-card-hover transition-all group"
+            class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border min-w-0 rounded-xl p-3 sm:p-4 hover:shadow-card-hover transition-all group"
           >
             <div class="flex items-center justify-between mb-3">
               <div :class="['p-2 rounded-lg border', card.bg, card.border]">
@@ -301,16 +301,16 @@ onMounted(fetchData)
               </div>
             </div>
             <p class="text-[11px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider mb-1">{{ card.title }}</p>
-            <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ card.value }}</p>
+            <p class="break-words text-xl font-bold tabular-nums sm:text-2xl text-gray-900 dark:text-white">{{ card.value }}</p>
           </div>
         </div>
 
         <!-- Two Column Layout: Report + Charts -->
-        <div class="grid grid-cols-5 gap-6 mb-6">
+        <div class="mb-6 grid min-w-0 grid-cols-1 gap-4 lg:gap-6 2xl:grid-cols-5">
           <!-- Weekly Report (3 cols) -->
-          <div class="col-span-3 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl overflow-hidden">
+          <div class="min-w-0 bg-white 2xl:col-span-3 dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl overflow-hidden">
             <!-- Report Header -->
-            <div class="px-6 py-4 border-b border-gray-100 dark:border-dark-border flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-3 py-3 dark:border-dark-border sm:px-6 sm:py-4">
               <div class="flex items-center gap-2.5">
                 <div class="p-1.5 bg-primary-50 dark:bg-primary-500/10 rounded-lg">
                   <BarChart3 class="w-4 h-4 text-primary-500" />
@@ -322,14 +322,14 @@ onMounted(fetchData)
               </div>
               <NuxtLink 
                 :to="'/relatorio-semanal?week=' + selectedWeek"
-                class="flex items-center gap-1.5 text-[11px] font-semibold text-primary-500 hover:text-primary-600 transition-colors"
+                class="inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-600 transition-colors"
               >
                 Ver completo <ExternalLink class="w-3 h-3" />
               </NuxtLink>
             </div>
 
             <!-- Report Body -->
-            <div class="p-6 space-y-5 max-h-[520px] overflow-y-auto">
+            <div class="space-y-5 p-3 sm:p-6 2xl:max-h-[520px] 2xl:overflow-y-auto">
               <!-- Resumo -->
               <div>
                 <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{{ currentReport.resumo }}</p>
@@ -375,29 +375,26 @@ onMounted(fetchData)
           </div>
 
           <!-- Charts (2 cols) -->
-          <div class="col-span-2 space-y-6">
+          <div class="min-w-0 space-y-4 lg:space-y-6 2xl:col-span-2">
             <!-- Funnel Chart -->
-            <div class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-5">
+            <div class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-3 sm:p-5">
               <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <TrendingUp class="w-4 h-4 text-primary-500" /> Funil de Leads
               </h3>
               <div class="space-y-3">
                 <div v-for="item in chartData.funnel" :key="item.label" class="flex items-center gap-3">
                   <span class="text-[11px] font-medium text-gray-500 dark:text-dark-muted w-20 text-right">{{ item.label }}</span>
-                  <div class="flex-1 bg-gray-100 dark:bg-dark-card rounded-full h-6 overflow-hidden">
-                    <div 
-                      class="h-full rounded-full flex items-center justify-end pr-2 transition-all duration-700"
-                      :style="{ width: (item.value / funnelMax * 100) + '%', backgroundColor: item.color }"
-                    >
-                      <span class="text-[10px] font-bold text-white">{{ item.value }}</span>
-                    </div>
+                  <div class="h-3 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-card" aria-hidden="true">
+                    <div class="h-full rounded-full motion-safe:transition-all"
+                      :style="{ width: (item.value / funnelMax * 100) + '%', backgroundColor: item.color }" />
                   </div>
+                  <span class="min-w-10 text-right text-xs font-semibold tabular-nums">{{ item.value }}</span>
                 </div>
               </div>
             </div>
 
             <!-- Weekly Overview (simplified) -->
-            <div class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-5">
+            <div class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-3 sm:p-5">
               <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <BarChart3 class="w-4 h-4 text-primary-500" /> Resumo por Semana
               </h3>
@@ -432,7 +429,7 @@ onMounted(fetchData)
 
         <!-- Activity Log -->
         <div class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl overflow-hidden">
-          <div class="px-6 py-4 border-b border-gray-100 dark:border-dark-border flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-3 py-3 dark:border-dark-border sm:px-6 sm:py-4">
             <div class="flex items-center gap-2.5">
               <div class="p-1.5 bg-gray-100 dark:bg-dark-card rounded-lg">
                 <Clock class="w-4 h-4 text-gray-500 dark:text-dark-muted" />
@@ -453,13 +450,13 @@ onMounted(fetchData)
           </div>
 
           <div v-else class="divide-y divide-gray-50 dark:divide-dark-border">
-            <div v-for="item in paginatedActivities" :key="item.id" class="px-6 py-3.5 hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors flex items-center gap-4">
+            <div v-for="item in paginatedActivities" :key="item.id" class="px-3 py-3.5 sm:px-6 hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors flex items-center gap-4">
               <div :class="['p-2 rounded-lg', getActivityColor(item.type)]">
                 <component :is="getActivityIcon(item.type)" class="w-4 h-4" />
               </div>
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ item.text }}</p>
-                <div class="flex items-center gap-2 mt-1">
+                <div class="mt-1 flex flex-wrap items-center gap-2">
                   <span class="text-[10px] text-gray-400 dark:text-dark-muted">{{ timeAgo(item.created_at) }}</span>
                   <span :class="['text-[9px] font-semibold px-1.5 py-0.5 rounded-md', getActivityColor(item.type)]">
                     {{ getActivityLabel(item.type) }}

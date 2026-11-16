@@ -60,9 +60,9 @@ onMounted(fetchData)
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
     <Sidebar />
-    <main :class="[mainMargin, 'p-8 transition-all duration-300 max-w-5xl']">
+    <main :class="[mainMargin, 'min-w-0 p-3 sm:p-5 xl:p-8 transition-all duration-300 max-w-5xl']">
       
       <!-- Back + Title -->
       <header class="mb-8">
@@ -89,26 +89,26 @@ onMounted(fetchData)
       </div>
       <template v-else>
         <!-- Metrics Grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
-          <div v-for="card in metricCards" :key="card.title" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-4">
-            <div class="flex items-center gap-2 mb-2">
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4 mb-8">
+          <div v-for="card in metricCards" :key="card.title" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border min-w-0 rounded-xl p-3 sm:p-4">
+            <div class="mb-2 flex flex-wrap items-center gap-2">
               <div :class="['p-1.5 rounded-lg', card.bg]">
                 <component :is="card.icon" :class="['w-3.5 h-3.5', card.color]" />
               </div>
               <span class="text-[11px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider">{{ card.title }}</span>
             </div>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ card.value }}</p>
+            <p class="break-words text-lg font-bold sm:text-xl text-gray-900 dark:text-white">{{ card.value }}</p>
           </div>
         </div>
 
         <!-- Resumo Executivo -->
-        <section class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-6 mb-6">
+        <section class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-4 sm:p-6 mb-6">
           <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-3">Resumo Executivo</h2>
           <p class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{{ currentReport.resumo }}</p>
         </section>
 
         <!-- Destaques -->
-        <section v-if="currentReport.destaques?.length" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-6 mb-6">
+        <section v-if="currentReport.destaques?.length" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-4 sm:p-6 mb-6">
           <h2 class="text-base font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
             <Star class="w-5 h-5 text-amber-500" /> Destaques da Semana
           </h2>
@@ -120,7 +120,7 @@ onMounted(fetchData)
         </section>
 
         <!-- Conselhos -->
-        <section v-if="currentReport.conselhos?.length" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-6 mb-6">
+        <section v-if="currentReport.conselhos?.length" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-4 sm:p-6 mb-6">
           <h2 class="text-base font-bold text-primary-600 dark:text-primary-400 mb-4 flex items-center gap-2">
             <Lightbulb class="w-5 h-5" /> Conselhos para o Vendedor
           </h2>
@@ -133,7 +133,7 @@ onMounted(fetchData)
         </section>
 
         <!-- Alertas -->
-        <section v-if="currentReport.alertas?.length" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-6 mb-6">
+        <section v-if="currentReport.alertas?.length" class="bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl p-4 sm:p-6 mb-6">
           <h2 class="text-base font-bold text-amber-500 mb-4 flex items-center gap-2">
             <AlertTriangle class="w-5 h-5" /> Alertas e Atenção
           </h2>

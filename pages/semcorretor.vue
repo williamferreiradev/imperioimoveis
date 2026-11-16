@@ -317,21 +317,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
     <Sidebar />
 
     <!-- Error Debug Output -->
     <pre v-if="error" class="fixed top-4 right-4 bg-red-50 text-red-600 dark:bg-red-900 dark:text-white p-4 rounded-xl z-50 max-w-md overflow-auto shadow-card">{{ error }}</pre>
 
-    <main :class="[mainMargin, 'p-6 lg:p-10 h-screen overflow-hidden flex flex-col transition-all duration-300']">
+    <main :class="[mainMargin, 'min-w-0 p-3 sm:p-5 xl:p-8 lg:h-dvh lg:overflow-hidden flex flex-col transition-all duration-300']">
       <!-- Header -->
-      <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <header class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4 lg:mb-6">
         <div class="flex items-center gap-4">
           <div class="p-3 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500 flex-shrink-0 shadow-sm">
             <Clock class="w-6 h-6" />
           </div>
           <div>
-            <h1 class="text-xl lg:text-2xl font-bold tracking-tight flex items-center gap-3">
+            <h1 class="text-xl lg:text-2xl font-bold tracking-tight flex flex-wrap items-center gap-2">
               Leads em Espera
               <span v-if="!loading" class="text-xs font-semibold text-primary-600 dark:text-primary-400 px-3 py-1 rounded-full bg-primary-50 dark:bg-primary-500/10 border border-primary-100 dark:border-primary-500/20">
                 {{ filteredTotal }} {{ filteredTotal === 1 ? 'interessado' : 'interessados' }}
@@ -356,7 +356,7 @@ onUnmounted(() => {
       </header>
 
       <!-- Search and Stage Filters Bar -->
-      <div class="flex flex-col gap-4 mb-6">
+      <div class="flex flex-col gap-3 mb-4 lg:mb-6">
         <!-- Top row: Search input -->
         <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
           <div class="relative flex-1">
@@ -364,8 +364,8 @@ onUnmounted(() => {
             <input 
               v-model="searchText"
               type="text"
-              placeholder="Buscar por nome, telefone, e-mail, interesse ou código..."
-              class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
+              aria-label="Buscar por nome, telefone, e-mail, interesse ou código" placeholder="Buscar por nome ou telefone"
+              class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-xl text-base sm:text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
             />
             <button 
               v-if="searchText"
@@ -379,7 +379,17 @@ onUnmounted(() => {
         </div>
 
         <!-- Stage Filter Chips -->
-        <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <label class="flex flex-col gap-1 text-xs font-semibold text-gray-600 dark:text-dark-muted sm:hidden">
+          Estágio
+          <select :value="selectedStage" @change="handleStageSelect(($event.target as HTMLSelectElement).value)"
+            class="min-h-11 rounded-lg border border-gray-200 bg-white px-2 text-base text-gray-900 dark:border-dark-border dark:bg-dark-surface dark:text-white">
+            <option value="todos">Todos ({{ stageCounts.todos || 0 }})</option>
+            <option v-for="stage in stages" :key="stage.id" :value="stage.estagio">
+              {{ stage.estagio_name || stage.descricao || getStageName(stage.estagio, stage.id) }} ({{ stageCounts[stage.estagio] || 0 }})
+            </option>
+          </select>
+        </label>
+        <div class="hidden sm:flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <span class="text-xs font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider mr-1 hidden sm:inline-flex items-center gap-1.5">
             <Filter class="w-3.5 h-3.5" /> Estágios:
           </span>
@@ -431,7 +441,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Main Content Area: Table -->
-      <div class="flex-1 overflow-hidden relative flex flex-col">
+      <div class="flex min-h-0 flex-1 flex-col lg:overflow-hidden relative">
         <!-- Loading overlay -->
         <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-20 bg-white/80 dark:bg-dark-bg/80 backdrop-blur-sm transition-colors duration-300">
           <div class="flex flex-col items-center gap-3">
@@ -442,9 +452,9 @@ onUnmounted(() => {
 
         <!-- Table Card -->
         <div class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100 dark:border-dark-border rounded-xl overflow-hidden flex-1 flex flex-col shadow-card transition-all duration-300">
-          <div class="overflow-y-auto flex-1">
-            <table class="w-full text-left border-collapse">
-              <thead class="sticky top-0 z-10">
+          <div class="min-h-0 flex-1 xl:overflow-auto lg:overflow-y-auto">
+            <table class="block w-full text-left border-collapse xl:table">
+              <thead class="hidden xl:sticky xl:top-0 xl:z-10 xl:table-header-group">
                 <tr class="border-b border-gray-100 dark:border-dark-border text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider bg-gray-50/90 dark:bg-dark-card/90 backdrop-blur-md">
                   <th class="px-6 py-4 font-semibold">Nome</th>
                   <th class="px-6 py-4 font-semibold">Telefone</th>
@@ -454,10 +464,10 @@ onUnmounted(() => {
                   <th class="px-6 py-4 font-semibold text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-50 dark:divide-dark-border text-sm">
+              <tbody class="block divide-y xl:table-row-group divide-gray-50 dark:divide-dark-border text-sm">
                 <!-- Empty State -->
-                <tr v-if="!loading && filteredTotal === 0">
-                  <td colspan="6" class="py-16 text-center">
+                <tr v-if="!loading && filteredTotal === 0" class="block xl:table-row">
+                  <td colspan="6" class="block xl:table-cell px-3 py-10 xl:py-16 text-center">
                     <div class="flex flex-col items-center justify-center max-w-sm mx-auto">
                       <div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-dark-card flex items-center justify-center text-gray-400 dark:text-dark-muted mb-4 border border-gray-200 dark:border-dark-border">
                         <UserX class="w-7 h-7" />
@@ -481,10 +491,10 @@ onUnmounted(() => {
                 <tr 
                   v-for="lead in leads"
                   :key="lead.id" 
-                  class="group hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors"
+                  class="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-3 py-3 xl:table-row xl:p-0 hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors"
                 >
                   <!-- Nome -->
-                  <td class="px-6 py-4">
+                  <td class="min-w-0 xl:px-6 xl:py-4">
                     <div class="flex items-center gap-3">
                       <div v-if="lead.media_url" class="w-9 h-9 rounded-lg flex-shrink-0 overflow-hidden border border-gray-100 dark:border-dark-border">
                         <img :src="lead.media_url" :alt="lead.name || 'Avatar'" class="w-full h-full object-cover" />
@@ -493,7 +503,7 @@ onUnmounted(() => {
                         {{ (lead.name || 'D').charAt(0).toUpperCase() }}
                       </div>
                       <div class="min-w-0">
-                        <span class="font-semibold text-gray-900 dark:text-white block truncate">{{ lead.name || 'Desconhecido' }}</span>
+                        <span class="font-semibold text-gray-900 dark:text-white block break-words">{{ lead.name || 'Desconhecido' }}</span>
                         <span v-if="lead.created_at" class="text-[11px] text-gray-400 dark:text-dark-muted block">
                           Cadastrado em {{ formatDate(lead.created_at) }}
                         </span>
@@ -502,29 +512,30 @@ onUnmounted(() => {
                   </td>
 
                   <!-- Telefone -->
-                  <td class="px-6 py-4">
-                    <span class="text-gray-500 dark:text-gray-300 text-xs font-mono font-medium">
+                  <td class="col-start-1 row-start-2 min-w-0 xl:px-6 xl:py-4">
+                    <span class="text-gray-500 dark:text-gray-300 break-all text-xs font-mono font-medium">
                       {{ formatPhone(lead.phone, lead.remotejid) }}
                     </span>
                   </td>
 
                   <!-- Status -->
-                  <td class="px-6 py-4">
+                  <td class="col-start-1 row-start-3 min-w-0 xl:px-6 xl:py-4">
                     <span :class="['inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold', getStageBadgeClass(lead.stage || lead.situacao_nome, lead.stage_id)]">
                       {{ getStageName(lead.stage || lead.situacao_nome, lead.stage_id) }}
                     </span>
                   </td>
 
                   <!-- Código Imóvel -->
-                  <td class="px-6 py-4 text-xs text-gray-500 dark:text-dark-muted font-mono">
+                  <td class="col-start-1 row-start-4 min-w-0 break-words xl:px-6 xl:py-4 text-xs text-gray-500 dark:text-dark-muted font-mono">
                     <div class="flex items-center gap-1.5">
+                      <span class="xl:hidden">Imóvel</span>
                       <Building v-if="lead.tipo_imovel || lead.metadata?.propertyCode" class="w-3.5 h-3.5 text-gray-400" />
                       <span>{{ lead.tipo_imovel || lead.metadata?.propertyCode || 'N/A' }}</span>
                     </div>
                   </td>
 
                   <!-- Modo -->
-                  <td class="px-6 py-4 text-xs">
+                  <td class="col-start-2 row-start-3 justify-self-end xl:px-6 xl:py-4 text-xs">
                     <span v-if="lead.agent_active === false" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">
                       <Lock class="w-3 h-3" /> Desativado
                     </span>
@@ -534,19 +545,19 @@ onUnmounted(() => {
                   </td>
 
                   <!-- Ações -->
-                  <td class="px-6 py-4 text-right">
-                    <div class="flex items-center justify-end gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                  <td class="col-start-2 row-span-2 row-start-1 text-right xl:px-6 xl:py-4">
+                    <div class="flex items-center justify-end gap-0 xl:gap-1 xl:opacity-70 group-hover:opacity-100 transition-opacity">
                       <button 
                         @click="openChat(lead.id)"
-                        class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition-all" 
-                        title="Abrir Conversa"
+                        class="inline-flex h-11 w-11 items-center justify-center xl:h-8 xl:w-8 text-gray-500 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition-all"
+                        aria-label="Abrir conversa"
                       >
                         <MessageCircle class="w-4 h-4" />
                       </button>
                       <button 
                         @click="openLeadDetails(lead)"
-                        class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition-all" 
-                        title="Ver Detalhes"
+                        class="inline-flex h-11 w-11 items-center justify-center xl:h-8 xl:w-8 text-gray-500 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition-all"
+                        aria-label="Ver detalhes"
                       >
                         <Eye class="w-4 h-4" />
                       </button>

@@ -217,7 +217,7 @@ const currentStageBadgeClasses = computed(() => {
         <div class="absolute inset-0 bg-gray-900/40 dark:bg-black/80 backdrop-blur-sm"></div>
         
         <!-- Modal Card -->
-        <div class="relative bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-sm shadow-luxury max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div class="relative bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-sm shadow-luxury max-w-2xl w-full max-h-[90dvh] overflow-y-auto">
           
           <!-- Header -->
           <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-dark-border sticky top-0 bg-white dark:bg-dark-surface z-10">
@@ -237,7 +237,7 @@ const currentStageBadgeClasses = computed(() => {
           <div class="p-6 space-y-6">
             
             <!-- Info Grid -->
-            <div class="grid grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               
               <!-- Nome e Avatar -->
               <div class="col-span-2 flex items-center gap-4 border-b border-gray-200 dark:border-dark-border pb-6 mb-2">

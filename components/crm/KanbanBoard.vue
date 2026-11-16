@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { Phone, Lock, Bot, Eye, EyeOff } from 'lucide-vue-next'
 
@@ -22,6 +22,12 @@ let scrollInterval: ReturnType<typeof setInterval> | null = null
 const isDragging = ref(false)
 const hideNumbers = ref(false)
 const reducedMotion = ref(false)
+const mobile = ref(false)
+const selectedStage = ref('')
+const activeStage = computed(() => props.stages.some(stage => stage.estagio === selectedStage.value)
+  ? selectedStage.value : props.stages[0]?.estagio)
+let mobileQuery: MediaQueryList | undefined
+const updateViewport = () => { mobile.value = mobileQuery?.matches ?? false }
 let motionPreference: MediaQueryList | undefined
 
 watch(() => props.stages.map(stage => props.columns[stage.estagio]?.leads), () => {
@@ -79,6 +85,9 @@ const stopDragScroll = () => {
 }
 
 onMounted(() => {
+  mobileQuery = window.matchMedia('(max-width: 1023px)')
+  updateViewport()
+  mobileQuery.addEventListener('change', updateViewport)
   motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
   reducedMotion.value = motionPreference.matches
   motionPreference.addEventListener('change', updateMotion)
@@ -101,6 +110,7 @@ const getStageColorClasses = (estagio: string) => {
 }
 
 onUnmounted(() => {
+  mobileQuery?.removeEventListener('change', updateViewport)
   stopDragScroll()
   motionPreference?.removeEventListener('change', updateMotion)
   document.removeEventListener('mousemove', handleDragScroll)
@@ -110,24 +120,35 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="kanban-wrapper h-full">
-    <button 
-      @click="hideNumbers = !hideNumbers" 
-      class="fixed bottom-6 right-6 z-50 bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:opacity-90 transition-all text-sm font-medium"
-    >
-      <Eye v-if="hideNumbers" class="w-4 h-4" />
-      <EyeOff v-else class="w-4 h-4" />
-      {{ hideNumbers ? 'Mostrar Números' : 'Ocultar Números' }}
-    </button>
+  <div class="flex h-full min-h-0 flex-col">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2 lg:justify-end">
+      <label class="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-gray-600 dark:text-dark-muted lg:hidden">
+        Etapa do Kanban
+        <select :value="activeStage" class="min-h-11 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-2 text-base font-medium text-gray-900 dark:border-dark-border dark:bg-dark-surface dark:text-white"
+          @change="selectedStage = ($event.target as HTMLSelectElement).value">
+          <option v-for="stage in stages" :key="stage.id" :value="stage.estagio">
+            {{ stage.estagio_name || stage.descricao || stage.estagio }} ({{ (columns[stage.estagio]?.total ?? 0).toLocaleString('pt-BR') }})
+          </option>
+        </select>
+      </label>
+      <button type="button" @click="hideNumbers = !hideNumbers"
+        class="mt-auto inline-flex h-11 w-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white text-gray-700 dark:border-dark-border dark:bg-dark-surface dark:text-gray-200 sm:w-auto sm:px-3"
+        :aria-label="hideNumbers ? 'Mostrar números' : 'Ocultar números'">
+        <Eye v-if="hideNumbers" class="h-4 w-4" aria-hidden="true" />
+        <EyeOff v-else class="h-4 w-4" aria-hidden="true" />
+        <span class="hidden text-sm font-medium sm:inline">{{ hideNumbers ? 'Mostrar números' : 'Ocultar números' }}</span>
+      </button>
+    </div>
 
-    <div ref="kanbanRef" class="flex gap-5 overflow-x-auto pb-3 h-full kanban-scroll">
+    <div ref="kanbanRef" class="flex min-h-0 flex-1 gap-5 lg:overflow-x-auto lg:pb-3 kanban-scroll">
       <div 
         v-for="col in stages" 
         :key="col.id" 
-        class="min-w-[300px] w-[300px] flex flex-col h-full"
+        class="h-full min-w-0 w-full flex-col lg:flex lg:w-[300px] lg:shrink-0"
+        :class="col.estagio === activeStage ? 'flex' : 'hidden'"
       >
         <!-- Column Header -->
-        <div class="mb-4 px-1">
+        <div class="hidden px-1 lg:mb-4 lg:block">
           <div 
             :class="[
               'flex items-center justify-between px-3 py-2.5 rounded-xl border',
@@ -154,6 +175,7 @@ onUnmounted(() => {
           :group="{ name: 'crm-leads' }"
           :animation="reducedMotion ? 0 : 160"
           :sort="false"
+          :disabled="mobile"
           ghost-class="ghost-card"
           class="flex flex-col gap-3 min-h-[100px] p-1"
           @start="onDragStart"
@@ -163,7 +185,7 @@ onUnmounted(() => {
           <div 
             v-for="lead in localColumns[col.id]"
             :key="lead.id" 
-            class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100/50 dark:border-dark-border/50 rounded-2xl p-5 cursor-grab active:cursor-grabbing shadow-card hover:shadow-luxury hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between relative overflow-hidden h-[195px] shrink-0"
+            class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100/50 dark:border-dark-border/50 rounded-2xl p-3 sm:p-5 lg:cursor-grab lg:active:cursor-grabbing shadow-card hover:shadow-luxury lg:hover:-translate-y-1 transition-all duration-300 group flex flex-col justify-between relative overflow-hidden min-h-[156px] gap-3 lg:h-[195px] shrink-0"
           >
             <!-- Subtle top accent -->
             <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary-400 to-primary-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
@@ -173,7 +195,7 @@ onUnmounted(() => {
               <div v-if="lead.media_url" class="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden border border-gray-100 dark:border-dark-border">
                 <img :src="lead.media_url" loading="lazy" :alt="lead.name || 'Avatar'" class="w-full h-full object-cover" />
               </div>
-              <div v-else class="w-12 h-12 rounded-xl bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center text-lg font-serif font-bold text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-500/20">
+              <div v-else class="w-12 h-12 shrink-0 rounded-xl bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center text-lg font-serif font-bold text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-500/20">
                 {{ (lead.name || 'D').charAt(0).toUpperCase() }}
               </div>
               <div class="flex-1 min-w-0">
@@ -181,8 +203,8 @@ onUnmounted(() => {
               </div>
               <button 
                 @click="emit('view-details', lead)"
-                class="p-2 text-gray-500 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-all bg-white/50 dark:bg-dark-bg/50 backdrop-blur-sm"
-                title="Ver Detalhes"
+                class="flex h-11 w-11 shrink-0 items-center justify-center text-gray-500 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-all bg-white/50 dark:bg-dark-bg/50 backdrop-blur-sm"
+                aria-label="Ver Detalhes"
               >
                 <Eye class="w-4 h-4" />
               </button>
@@ -191,7 +213,7 @@ onUnmounted(() => {
             <!-- Phone -->
             <div class="flex items-center gap-2 text-gray-500 dark:text-dark-muted text-sm bg-gray-50/80 dark:bg-dark-card/80 p-3 rounded-xl border border-gray-100/50 dark:border-dark-border/50">
                <Phone class="w-4 h-4 flex-shrink-0 text-primary-400" />
-               <span class="font-mono tracking-wider">{{ hideNumbers ? '***' : (lead.phone || 'Sem número') }}</span>
+               <span class="min-w-0 break-all font-mono tracking-wide">{{ hideNumbers ? '***' : (lead.phone || 'Sem número') }}</span>
             </div>
 
             <!-- Footer: Badges -->
@@ -242,18 +264,14 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Empty State -->
-          <div v-if="localColumns[col.id]?.length === 0" class="flex-1 flex items-center justify-center border border-dashed border-gray-200 dark:border-dark-border bg-gray-50/30 dark:bg-dark-bg/30 rounded-sm m-1 min-h-[120px]">
-            <span class="text-gray-400 dark:text-gray-500 text-xs font-medium uppercase tracking-wider">Vazio</span>
-          </div>
         </VueDraggable>
         <div class="px-2 py-3 text-center text-xs text-gray-600 dark:text-dark-muted">
           <span v-if="columns[col.estagio]?.loading" role="status">Carregando leads…</span>
-          <button v-else-if="columns[col.estagio]?.error" type="button" class="min-h-9 rounded-md border px-3" @click="emit('load-more', col.estagio, true)">
+          <button v-else-if="columns[col.estagio]?.error" type="button" class="min-h-11 rounded-md border px-3" @click="emit('load-more', col.estagio, true)">
             {{ columns[col.estagio]?.error }} Tentar novamente
           </button>
           <button v-else-if="(columns[col.estagio]?.leads.length ?? 0) < (columns[col.estagio]?.total ?? 0)" type="button"
-            class="min-h-9 rounded-md border border-gray-200 px-3 hover:text-primary-600 dark:border-dark-border"
+            class="min-h-11 rounded-md border border-gray-200 px-3 hover:text-primary-600 dark:border-dark-border"
             @click="emit('load-more', col.estagio)">Carregar mais leads</button>
           <span v-else-if="columns[col.estagio]?.total === 0">Nenhum lead nesta etapa</span>
         </div>

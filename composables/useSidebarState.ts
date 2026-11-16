@@ -5,13 +5,15 @@ export const useSidebarState = () => {
         isCollapsed.value = !isCollapsed.value
     }
 
-    const sidebarWidth = computed(() => isCollapsed.value ? 'w-16 sm:w-20' : 'w-16 sm:w-72')
-    const mainMargin = computed(() => isCollapsed.value ? 'ml-16 sm:ml-20' : 'ml-16 sm:ml-72')
+    const sidebarWidth = computed(() => isCollapsed.value ? 'lg:w-20' : 'lg:w-72')
+    const desktopMargin = computed(() => isCollapsed.value ? 'lg:ml-20' : 'lg:ml-72')
+    const mainMargin = computed(() => ['mt-14 lg:mt-0', desktopMargin.value])
 
     return {
         isCollapsed,
         toggleSidebar,
         sidebarWidth,
+        desktopMargin,
         mainMargin
     }
 }

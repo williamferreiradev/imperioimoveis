@@ -189,17 +189,17 @@ const confirmDelete = async (id: number) => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
     <Sidebar />
 
-    <main :class="[mainMargin, 'p-10 min-h-screen flex flex-col transition-all duration-300']">
+    <main :class="[mainMargin, 'p-3 sm:p-5 xl:p-8 min-h-screen flex flex-col transition-all duration-300']">
       <!-- Header -->
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 class="text-3xl font-bold font-serif text-gray-900 dark:text-white tracking-wide">Inventário de Imóveis</h1>
+          <h1 class="text-2xl lg:text-3xl font-bold font-serif text-gray-900 dark:text-white tracking-wide">Inventário de Imóveis</h1>
           <p class="text-gray-500 dark:text-gray-400 mt-1">Gerencie os imóveis cadastrados no sistema.</p>
         </div>
-        <button @click="openCreateModal" class="flex items-center gap-2 bg-primary-500 text-white px-5 py-2.5 rounded-sm hover:bg-primary-600 transition-colors shadow-luxury">
+        <button @click="openCreateModal" class="flex min-h-11 items-center justify-center gap-2 bg-primary-500 text-white px-5 py-2.5 rounded-sm hover:bg-primary-600 transition-colors shadow-luxury">
           <Plus class="w-4 h-4" />
           <span class="font-semibold uppercase tracking-widest text-xs">Novo Imóvel</span>
         </button>
@@ -214,7 +214,7 @@ const confirmDelete = async (id: number) => {
           <input 
             v-model="searchQuery" 
             type="text" 
-            placeholder="Buscar imóvel (Nome ou Descrição)..." 
+            aria-label="Buscar imóvel por nome ou descrição" placeholder="Buscar imóvel"
             class="block w-full pl-10 pr-3 py-2.5 border border-gray-200 dark:border-white/10 rounded-sm leading-5 bg-white dark:bg-dark-surface/50 backdrop-blur-md text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 sm:text-sm transition-colors shadow-sm dark:shadow-none"
           >
         </div>
@@ -229,8 +229,8 @@ const confirmDelete = async (id: number) => {
              <p class="mt-3 text-sm font-semibold text-gray-500">Sincronizando com a base de dados...</p>
           </div>
 
-          <table class="w-full text-left border-collapse">
-            <thead>
+          <table class="block w-full text-left border-collapse xl:table">
+            <thead class="hidden xl:table-header-group">
               <tr class="bg-gray-50 dark:bg-white/5 text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wider border-b border-gray-200 dark:border-white/5">
                 <th class="py-4 px-6 font-semibold">Imóvel & Foto</th>
                 <th class="py-4 px-6 font-semibold">Descrição</th>
@@ -238,40 +238,40 @@ const confirmDelete = async (id: number) => {
                 <th class="py-4 px-6 font-semibold text-right">Ações</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-white/5 text-gray-600 dark:text-gray-300 text-sm">
-              <tr v-for="property in filteredProperties" :key="property.id" class="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
-                <td class="py-4 px-6">
-                  <div class="flex items-center gap-4">
+            <tbody class="block divide-y xl:table-row-group divide-gray-200 dark:divide-white/5 text-gray-600 dark:text-gray-300 text-sm">
+              <tr v-for="property in filteredProperties" :key="property.id" class="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-4 sm:px-4 xl:table-row xl:p-0 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                <td class="col-span-2 min-w-0 xl:px-6 xl:py-4">
+                  <div class="flex items-center gap-3 xl:gap-4">
                     <div class="w-16 h-12 rounded-sm overflow-hidden border border-gray-200 dark:border-white/10 shrink-0 bg-gray-100 flex items-center justify-center text-gray-400">
                       <img v-if="property.url && !brokenImages.has(property.url)" loading="lazy" @error="brokenImages.add(property.url)" :src="property.url" :alt="property.nome" class="w-full h-full object-cover" />
                       <Building v-else class="w-5 h-5 opacity-50" />
                     </div>
                     <div>
-                      <p class="text-gray-900 dark:text-white font-medium">{{ property.nome }}</p>
+                      <p class="break-words text-gray-900 dark:text-white font-medium">{{ property.nome }}</p>
                     </div>
                   </div>
                 </td>
-                <td class="py-4 px-6">
-                  <p class="max-w-xs md:max-w-md truncate text-gray-500 dark:text-gray-400">
+                <td class="col-span-2 min-w-0 xl:px-6 xl:py-4">
+                  <p class="break-words xl:max-w-xs xl:truncate 2xl:max-w-md text-gray-500 dark:text-gray-400">
                     {{ property.descricao || 'Sem descrição' }}
                   </p>
                 </td>
-                <td class="py-4 px-6 font-medium text-gray-900 dark:text-white">
+                <td class="xl:px-6 xl:py-4 font-semibold text-gray-900 dark:text-white">
                   R$ {{ property.valor ? Number(property.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00' }}
                 </td>
-                <td class="py-4 px-6 text-right">
-                  <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button @click="openEditModal(property)" class="p-2 text-gray-400 hover:text-primary-500 transition-colors rounded-sm hover:bg-gray-100 dark:hover:bg-white/5" title="Editar">
+                <td class="xl:px-6 xl:py-4 text-right">
+                  <div class="flex items-center justify-end gap-1">
+                    <button @click="openEditModal(property)" class="inline-flex h-11 w-11 items-center justify-center xl:h-8 xl:w-8 text-gray-500 hover:text-primary-500 transition-colors rounded-sm hover:bg-gray-100 dark:hover:bg-white/5" aria-label="Editar">
                       <Edit class="w-4 h-4" />
                     </button>
-                    <button @click="confirmDelete(property.id)" class="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-sm hover:bg-gray-100 dark:hover:bg-white/5" title="Excluir">
+                    <button @click="confirmDelete(property.id)" class="inline-flex h-11 w-11 items-center justify-center xl:h-8 xl:w-8 text-gray-500 hover:text-red-500 transition-colors rounded-sm hover:bg-gray-100 dark:hover:bg-white/5" aria-label="Excluir">
                       <Trash2 class="w-4 h-4" />
                     </button>
                   </div>
                 </td>
               </tr>
-              <tr v-if="!loadingList && filteredProperties.length === 0">
-                <td colspan="4" class="py-12 text-center text-gray-400 dark:text-gray-500">
+              <tr v-if="!loadingList && filteredProperties.length === 0" class="block xl:table-row">
+                <td colspan="4" class="block px-3 xl:table-cell py-12 text-center text-gray-400 dark:text-gray-500">
                   <Building class="w-12 h-12 mx-auto mb-4 opacity-20" />
                   <p>Nenhum imóvel cadastrado ou encontrado.</p>
                 </td>
@@ -286,14 +286,14 @@ const confirmDelete = async (id: number) => {
     <div v-if="showModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeModal"></div>
       
-      <div class="relative z-10 pointer-events-auto bg-white dark:bg-dark-card w-full max-w-2xl rounded-sm shadow-2xl border border-gray-200 dark:border-white/10 flex flex-col max-h-[90vh] overflow-hidden">
+      <div class="relative z-10 pointer-events-auto bg-white dark:bg-dark-card w-full max-w-2xl rounded-sm shadow-2xl border border-gray-200 dark:border-white/10 flex flex-col max-h-[90dvh] overflow-hidden">
         
         <!-- Modal Header -->
         <div class="px-6 py-4 border-b border-gray-200 dark:border-white/10 flex items-center justify-between sticky top-0 bg-white dark:bg-dark-card z-10">
           <h2 class="text-xl font-serif font-bold text-gray-900 dark:text-white">
             {{ modalMode === 'create' ? 'Cadastrar Imóvel' : 'Atualizar Imóvel' }}
           </h2>
-          <button @click="closeModal" :disabled="isSaving" class="p-2 text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-50">
+          <button @click="closeModal" :disabled="isSaving" class="inline-flex h-11 w-11 items-center justify-center xl:h-8 xl:w-8 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-50">
             <X class="w-5 h-5" />
           </button>
         </div>

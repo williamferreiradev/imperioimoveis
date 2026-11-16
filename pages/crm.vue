@@ -211,21 +211,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans transition-colors duration-300">
     <Sidebar />
 
     <!-- Error Debug Output -->
     <pre v-if="error" class="fixed top-4 right-4 bg-red-50 text-red-600 dark:bg-red-900 dark:text-white p-4 rounded-xl z-50 max-w-md overflow-auto shadow-card">{{ error }}</pre>
 
-    <main :class="[mainMargin, 'min-w-0 p-3 sm:p-5 xl:p-8 h-dvh overflow-hidden flex flex-col transition-all duration-300']">
+    <main :class="[mainMargin, 'min-w-0 p-3 sm:p-5 xl:p-8 h-[calc(100dvh-3.5rem)] lg:h-dvh overflow-hidden flex flex-col transition-all duration-300']">
       <!-- Header -->
-      <header class="flex flex-wrap justify-between items-start gap-3 mb-4 sm:mb-6">
-        <div class="flex items-center gap-4">
-          <div class="p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500">
+      <header class="flex flex-wrap justify-between items-start gap-3 mb-3 sm:mb-6">
+        <div class="flex min-w-0 items-start gap-3">
+          <div class="shrink-0 p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500">
              <MessageSquare class="w-5 h-5" />
           </div>
           <div>
-            <h1 class="text-xl font-bold tracking-tight flex flex-wrap items-center gap-2">
+            <h1 class="text-lg sm:text-xl font-bold tracking-tight flex flex-wrap items-center gap-2">
               Pipeline de Negociações
               <span v-if="!loading" class="text-xs font-medium text-gray-500 dark:text-dark-muted px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-dark-card border border-gray-200 dark:border-dark-border">
                 {{ (currentView === 'kanban' ? boardTotal : total).toLocaleString('pt-BR') }} interessados
@@ -235,20 +235,20 @@ onUnmounted(() => {
           </div>
         </div>
         
-        <div class="flex items-center gap-3">
+        <div class="flex w-full items-center gap-2 sm:w-auto sm:gap-3">
           <button 
             @click="downloadCSV" :disabled="exporting" aria-label="Exportar CSV"
-            class="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 text-sm font-medium transition-colors shadow-sm"
+            class="flex min-h-11 items-center justify-center gap-2 px-3 sm:px-4 rounded-xl bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 text-sm font-medium transition-colors shadow-sm"
           >
             <Download class="w-4 h-4 text-primary-500" /> <span class="hidden sm:inline">{{ exporting ? 'Exportando…' : 'Exportar CSV' }}</span>
           </button>
 
           <!-- View Toggle -->
-          <div class="bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border shadow-card flex gap-1 transition-colors duration-300">
+          <div class="bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border shadow-card flex flex-1 gap-1 sm:flex-none transition-colors duration-300">
             <button 
-              @click="currentView = 'kanban'"
+              @click="currentView = 'kanban'" :aria-pressed="currentView === 'kanban'"
               :class="[
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                'flex min-h-11 flex-1 items-center justify-center gap-2 px-2 sm:px-4 rounded-lg text-sm font-medium transition-all',
                 currentView === 'kanban' ? 'bg-primary-500 text-white shadow-luxury' : 'text-gray-500 dark:text-dark-muted hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
               ]"
             >
@@ -256,9 +256,9 @@ onUnmounted(() => {
             </button>
             
             <button 
-              @click="currentView = 'table'"
+              @click="currentView = 'table'" :aria-pressed="currentView === 'table'"
               :class="[
-                 'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                 'flex min-h-11 flex-1 items-center justify-center gap-2 px-2 sm:px-4 rounded-lg text-sm font-medium transition-all',
                  currentView === 'table' ? 'bg-primary-500 text-white shadow-luxury' : 'text-gray-500 dark:text-dark-muted hover:bg-gray-50 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white'
               ]"
             >
@@ -269,7 +269,7 @@ onUnmounted(() => {
       </header>
 
       <!-- Content Area -->
-      <div class="flex-1 overflow-hidden relative">
+      <div class="relative min-h-0 flex-1 overflow-hidden">
         <div v-if="loading" class="absolute inset-0 flex items-center justify-center z-10 bg-white/80 dark:bg-dark-bg/80 backdrop-blur-sm transition-colors duration-300">
            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
         </div>

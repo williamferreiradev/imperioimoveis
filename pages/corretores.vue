@@ -158,12 +158,12 @@ const deleteCorretor = async (corretor: any) => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans selection:bg-primary-500 selection:text-white transition-colors duration-300">
+  <div class="flow-root min-h-dvh bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans selection:bg-primary-500 selection:text-white transition-colors duration-300">
     <Sidebar />
 
     <main :class="[mainMargin, 'p-3 sm:p-5 xl:p-8 transition-all duration-300']">
       <!-- Header -->
-      <header class="mb-8">
+      <header class="mb-4 sm:mb-8">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Corretores</h1>
         <p class="text-gray-400 dark:text-dark-muted text-sm mt-1">Lista de todos os corretores e suas atribuições</p>
       </header>
@@ -172,33 +172,33 @@ const deleteCorretor = async (corretor: any) => {
       <div class="bg-white dark:bg-dark-surface rounded-xl border border-gray-200 dark:border-dark-border overflow-hidden shadow-sm transition-colors">
         
         <!-- Card Header with Icon and Count -->
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-dark-border flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-3 py-3 dark:border-dark-border sm:px-6 sm:py-4">
           <div class="flex items-center gap-3">
             <div class="p-2 bg-primary-100 dark:bg-primary-900/40 rounded-xl">
               <UserCircle class="w-5 h-5 text-primary-600 dark:text-primary-500" />
             </div>
-            <h2 class="text-lg font-bold text-gray-900 dark:text-white">Diretório de Corretores</h2>
+            <h2 class="text-base font-bold text-gray-900 sm:text-lg dark:text-white">Diretório de Corretores</h2>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <!-- Filter toggle -->
             <button 
-              @click="showFilters = !showFilters"
-              :class="['flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors border', showFilters || hasActiveFilters ? 'text-primary-600 bg-primary-50 dark:bg-primary-500/10 border-primary-200 dark:border-primary-500/20' : 'text-gray-500 dark:text-dark-muted hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-dark-card border-gray-100 dark:border-dark-border']"
+              @click="showFilters = !showFilters" :aria-expanded="showFilters"
+              :class="['flex min-h-11 items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors border', showFilters || hasActiveFilters ? 'text-primary-600 bg-primary-50 dark:bg-primary-500/10 border-primary-200 dark:border-primary-500/20' : 'text-gray-500 dark:text-dark-muted hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-dark-card border-gray-100 dark:border-dark-border']"
             >
               <Filter class="w-3.5 h-3.5" />
-              <span v-if="!showFilters">Filtrar</span>
+              <span>Filtrar</span>
             </button>
 
             <!-- New Button -->
             <button 
               @click="openNewCorretorModal"
-              class="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg shadow-sm transition-colors"
+              class="flex min-h-11 items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg shadow-sm transition-colors"
             >
               <Plus class="w-3.5 h-3.5" />
               Novo Corretor
             </button>
 
-            <span class="bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 dark:border-white/10 shadow-inner ml-2">
+            <span class="bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 dark:border-white/10 shadow-inner">
               {{ filteredCorretores.length }} de {{ corretores.length }}
             </span>
           </div>
@@ -206,10 +206,10 @@ const deleteCorretor = async (corretor: any) => {
 
         <!-- Filters Panel -->
         <Transition name="slide">
-          <div v-if="showFilters" class="px-6 py-4 border-b border-gray-200 dark:border-dark-border bg-gray-50/80 dark:bg-dark-card/30">
-            <div class="flex flex-wrap items-center gap-6">
+          <div v-if="showFilters" class="px-3 py-3 sm:px-6 sm:py-4 border-b border-gray-200 dark:border-dark-border bg-gray-50/80 dark:bg-dark-card/30">
+            <div class="flex flex-wrap items-center gap-3 sm:gap-6">
               <!-- Status Filter -->
-              <div class="flex items-center gap-3">
+              <div class="flex flex-wrap items-center gap-2">
                 <span class="text-[11px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-wider">Status</span>
                 <div class="flex gap-1.5 bg-white dark:bg-dark-surface p-1 rounded-xl border border-gray-100 dark:border-dark-border">
                   <button 
@@ -230,14 +230,14 @@ const deleteCorretor = async (corretor: any) => {
         </Transition>
 
         <!-- Search Bar -->
-        <div class="px-6 py-4 bg-gray-50 dark:bg-dark-bg border-b border-gray-200 dark:border-dark-border">
+        <div class="px-3 py-3 sm:px-6 sm:py-4 bg-gray-50 dark:bg-dark-bg border-b border-gray-200 dark:border-dark-border">
           <div class="relative max-w-2xl">
             <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 dark:text-gray-500" />
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Buscar corretor por nome ou telefone..."
-              class="w-full bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded-xl pl-12 pr-4 py-3 text-sm flex-1 focus:outline-none focus:ring-1 focus:ring-primary-500 shadow-sm transition-all"
+              placeholder="Buscar por nome ou telefone" aria-label="Buscar corretor por nome ou telefone"
+              class="w-full bg-white dark:bg-dark-surface border border-gray-300 dark:border-dark-border text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 rounded-xl pl-12 pr-4 py-2.5 text-base sm:text-sm flex-1 focus:outline-none focus:ring-1 focus:ring-primary-500 shadow-sm transition-all"
             />
           </div>
         </div>
@@ -330,7 +330,7 @@ const deleteCorretor = async (corretor: any) => {
               <!-- Edit Button -->
               <button 
                 @click.stop="editCorretor(corretor)"
-                class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition-colors"
+                class="inline-flex h-11 w-11 items-center justify-center sm:h-8 sm:w-8 text-gray-500 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-lg transition-colors"
                 title="Editar Corretor"
               >
                 <Pencil class="w-4 h-4" />
@@ -339,7 +339,7 @@ const deleteCorretor = async (corretor: any) => {
               <!-- Delete Button -->
               <button 
                 @click.stop="deleteCorretor(corretor)"
-                class="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
+                class="inline-flex h-11 w-11 items-center justify-center sm:h-8 sm:w-8 text-gray-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
                 title="Excluir Corretor"
               >
                 <Trash2 class="w-4 h-4" />
