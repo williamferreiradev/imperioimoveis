@@ -21,13 +21,12 @@ import {
 } from 'lucide-vue-next'
 
 const router = useRouter()
-const { isCollapsed, toggleSidebar } = useSidebarState()
+const { isCollapsed, toggleSidebar, sidebarWidth } = useSidebarState()
 const supabase = useSupabaseClient<any>()
 const currentUser = useSupabaseUser()
 
 const leadsCount = ref(0)
 const semCorretorCount = ref(0)
-const clinicId = ref<string | null>(null)
 let realtimeChannel: any
 
 const fetchLeadsCount = async () => {
@@ -53,26 +52,8 @@ const fetchLeadsCount = async () => {
   }
 }
 
-const fetchClinicId = async () => {
-  try {
-    const { data: rpcData } = await supabase.rpc('get_auth_clinic_id')
-    if (rpcData) { clinicId.value = rpcData; return }
-
-    const { data: sessionData } = await supabase.auth.getUser()
-    if (sessionData?.user?.user_metadata?.clinic_id) {
-      clinicId.value = sessionData.user.user_metadata.clinic_id; return
-    }
-
-    const { data: leadData } = await supabase.from('leads').select('clinic_id').limit(1).single()
-    if (leadData) clinicId.value = leadData.clinic_id
-  } catch (err) {
-    console.error('Erro ao buscar clinic_id:', err)
-  }
-}
-
 onMounted(() => {
   fetchLeadsCount()
-  fetchClinicId()
   
   realtimeChannel = supabase.channel('sidebar_leads_changes')
     .on(
@@ -121,23 +102,23 @@ const handleLogout = async () => {
   <aside 
     :class="[
       'h-screen bg-white/80 dark:bg-dark-bg/80 backdrop-blur-2xl border-r border-gray-100 dark:border-dark-border flex flex-col fixed left-0 top-0 overflow-hidden z-50 sidebar-transition',
-      isCollapsed ? 'w-20' : 'w-72'
+      sidebarWidth
     ]"
   >
     <!-- Header / Logo -->
-    <div class="h-[72px] flex items-center border-b border-gray-100 dark:border-dark-border" :class="isCollapsed ? 'px-4 justify-center' : 'px-6 justify-between'">
+    <div class="h-[72px] flex items-center max-sm:justify-center max-sm:px-1 border-b border-gray-100 dark:border-dark-border" :class="isCollapsed ? 'px-4 justify-center' : 'px-6 justify-between'">
       <div class="flex items-center gap-3 group cursor-pointer" :class="isCollapsed ? 'justify-center' : ''">
          <div class="w-10 h-10 rounded-sm bg-primary-500 flex items-center justify-center shadow-luxury sidebar-transition group-hover:scale-105 flex-shrink-0">
             <Building class="w-5 h-5 text-white" />
          </div>
-         <div v-if="!isCollapsed" class="sidebar-text-transition overflow-hidden">
+         <div v-if="!isCollapsed" class="hidden sm:block sidebar-text-transition overflow-hidden">
            <span class="text-gray-900 dark:text-white font-bold text-lg tracking-tight block whitespace-nowrap">IMPÉRIO</span>
            <span class="text-[11px] text-gray-400 dark:text-dark-muted font-medium whitespace-nowrap uppercase tracking-wider">Imóveis</span>
          </div>
       </div>
       <button 
         @click="toggleSidebar"
-        class="p-1.5 rounded-lg text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 sidebar-transition"
+        class="hidden sm:block p-1.5 rounded-lg text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 sidebar-transition"
         :title="isCollapsed ? 'Expandir menu' : 'Recolher menu'"
       >
         <ChevronsLeft v-if="!isCollapsed" class="w-4 h-4" />
@@ -146,11 +127,11 @@ const handleLogout = async () => {
     </div>
 
     <!-- Navigation -->
-    <div class="flex-1 overflow-y-auto py-6" :class="isCollapsed ? 'px-3' : 'px-4'">
+    <div class="flex-1 overflow-y-auto py-4 sm:py-6 max-sm:px-1" :class="isCollapsed ? 'px-3' : 'px-4'">
       <div v-for="section in navigation" :key="section.name" class="mb-6">
         <h3 
           v-if="!isCollapsed" 
-          class="text-[10px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-[0.15em] px-4 mb-3 sidebar-text-transition"
+          class="hidden sm:block text-[10px] font-semibold text-gray-400 dark:text-dark-muted uppercase tracking-[0.15em] px-4 mb-3 sidebar-text-transition"
         >
           {{ section.name }}
         </h3>
@@ -161,12 +142,13 @@ const handleLogout = async () => {
             <NuxtLink 
               :to="item.route" 
               :class="[
-                'flex items-center rounded-sm text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50/50 dark:hover:bg-white/5 sidebar-transition group relative border-l-2 border-transparent',
+                'flex items-center rounded-sm text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50/50 dark:hover:bg-white/5 sidebar-transition group relative border-l-2 border-transparent max-sm:justify-center max-sm:gap-0 max-sm:px-0 max-sm:min-h-10',
                 isCollapsed ? 'justify-center p-3' : 'gap-3 px-4 py-2.5',
                 (item as any).disabled ? 'opacity-50 pointer-events-none cursor-not-allowed' : ''
               ]"
               active-class="!text-primary-500 !border-primary-500 !font-semibold bg-gray-50/20 dark:bg-white/5"
-              :title="isCollapsed ? item.name : undefined"
+              :title="item.name"
+              :aria-label="item.name"
               :target="(item as any).external ? '_blank' : undefined"
             >
               <component 
@@ -174,12 +156,12 @@ const handleLogout = async () => {
                 class="w-[18px] h-[18px] sidebar-transition flex-shrink-0" 
               />
               
-              <span v-if="!isCollapsed" class="flex-1 sidebar-text-transition">{{ item.name }}</span>
+              <span v-if="!isCollapsed" class="hidden sm:block flex-1 sidebar-text-transition">{{ item.name }}</span>
 
               <!-- Badge -->
               <span 
                 v-if="(item as any).badge && !isCollapsed" 
-                class="bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm"
+                class="hidden sm:inline bg-primary-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm"
               >
                 {{ (item as any).badge }}
               </span>
@@ -196,15 +178,15 @@ const handleLogout = async () => {
     </div>
 
     <!-- Theme Toggle -->
-    <div class="px-4 py-2 border-t border-gray-100 dark:border-dark-border flex" :class="isCollapsed ? 'justify-center' : 'justify-end'">
+    <div class="px-4 max-sm:px-1 py-2 border-t border-gray-100 dark:border-dark-border flex" :class="isCollapsed ? 'justify-center' : 'justify-end'">
       <ThemeToggle />
     </div>
 
     <!-- Footer / User Profile + Collapse -->
-    <div class="p-4 border-t border-gray-100 dark:border-dark-border">
+    <div class="p-4 max-sm:p-1 border-t border-gray-100 dark:border-dark-border">
       <div 
         :class="[
-          'flex items-center rounded-sm hover:bg-gray-50 dark:hover:bg-white/5 sidebar-transition group',
+          'flex items-center rounded-sm hover:bg-gray-50 dark:hover:bg-white/5 sidebar-transition group max-sm:flex-col max-sm:justify-center max-sm:gap-1 max-sm:p-1',
           isCollapsed ? 'justify-center p-2' : 'gap-3 p-3'
         ]"
       >
@@ -214,7 +196,7 @@ const handleLogout = async () => {
         </div>
         
         <template v-if="!isCollapsed">
-          <div class="flex-1 min-w-0">
+          <div class="hidden sm:block flex-1 min-w-0">
             <p class="text-sm font-semibold text-gray-900 dark:text-white truncate">
               {{ currentUser?.user_metadata?.full_name || currentUser?.email?.split('@')[0] || 'Usuário' }}
             </p>

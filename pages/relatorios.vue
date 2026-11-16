@@ -7,6 +7,8 @@ import {
   AlertTriangle, Lightbulb, Star, ExternalLink, ChevronDown
 } from 'lucide-vue-next'
 import { useSupabaseClient } from '#imports'
+import { addCalendarDays, startOfSaoPauloDay } from '@/utils/crmQueries'
+import { formatWeek, formatReportCurrency as formatCurrency, summarizeWeek, type WeeklyReportRow } from '@/utils/crmReports'
 
 const { mainMargin } = useSidebarState()
 const supabase = useSupabaseClient<any>()
@@ -18,79 +20,13 @@ const activityPage = ref(1)
 const activityPerPage = 4
 const weekDropdownOpen = ref(false)
 
-// Data refs
-const weeks = ref<any[]>([])
-const activityLog = ref<any[]>([])
-const dbActivities = ref<any[]>([])
-
-
-function getMonday(d: Date) {
-  const date = new Date(d)
-  const day = date.getDay()
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1)
-  return new Date(date.setDate(diff))
-}
-
-function localYyyymmdd(d: Date) {
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
-}
-
-function getStartAndEndOfWeek() {
-  const now = new Date()
-  const monday = getMonday(now)
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
-  
-  return {
-    semana_inicio: localYyyymmdd(monday),
-    semana_fim: localYyyymmdd(sunday)
-  }
-}
-
-function getWeekStartDate(dateStr: string) {
-  try {
-    const d = new Date(dateStr)
-    if (isNaN(d.getTime())) {
-      return getStartAndEndOfWeek().semana_inicio
-    }
-    const monday = getMonday(d)
-    return localYyyymmdd(monday)
-  } catch (e) {
-    return getStartAndEndOfWeek().semana_inicio
-  }
-}
-
-function formatDateBr(dateStr: string) {
-  if (!dateStr) return ''
-  try {
-    const parts = dateStr.slice(0, 10).split('-')
-    if (parts.length === 3) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`
-    }
-    return dateStr
-  } catch (e) {
-    return dateStr
-  }
-}
-
-function formatWeekPeriod(inicioStr: string, fimStr: string) {
-  const inicio = new Date(inicioStr + 'T12:00:00')
-  const fim = new Date(fimStr + 'T12:00:00')
-  const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-  const diaInicio = String(inicio.getDate()).padStart(2, '0')
-  const mesInicio = meses[inicio.getMonth()]
-  const diaFim = String(fim.getDate()).padStart(2, '0')
-  const mesFim = meses[fim.getMonth()]
-  
-  if (inicio.getMonth() === fim.getMonth()) {
-    return `${diaInicio} – ${diaFim} ${mesInicio}`
-  } else {
-    return `${diaInicio} ${mesInicio} – ${diaFim} ${mesFim}`
-  }
-}
+const weeks = ref<(WeeklyReportRow & { key: string; label: string; short: string })[]>([])
+const error = ref('')
+const activityError = ref('')
+const activityCount = ref(0)
+const activityLoading = ref(false)
+const paginatedActivities = ref<any[]>([])
+let activityRequest = 0
 
 const currentWeekLabel = computed(() => {
   const w = weeks.value.find(w => w.key === selectedWeek.value)
@@ -115,95 +51,10 @@ const currentMetrics = computed(() => {
     receita: Number(active.receita || 0)
   }
 })
-// Current week report content (merging mock data for realism or dynamically generated for future database records)
-const currentReport = computed(() => {
-  const active = weeks.value.find(w => w.key === selectedWeek.value)
-  if (!active) return {}
-  
-  const { mockWeeklyReports } = useMockData()
-  const mockKeys = ['semana-1', 'semana-2', 'semana-3', 'semana-4']
-  
-  if (mockKeys.includes(selectedWeek.value)) {
-    const report = mockWeeklyReports[selectedWeek.value] || mockWeeklyReports['semana-1']
-    return {
-      ...report,
-      title: `Semana ${formatWeekPeriod(active.semana_inicio, active.semana_fim)}`
-    }
-  }
-  
-  // Dynamic generated report for database weeks
-  const totalLeads = Number(active.total_leads || 0)
-  const qualificados = Number(active.qualificados || 0)
-  const agendamentos = Number(active.agendamentos || 0)
-  const convertidos = Number(active.convertidos || 0)
-  const taxaConversao = Number(active.taxa_conversao || 0)
-  const receita = Number(active.receita || 0)
-
-  let resumo = ''
-  const destaques: string[] = []
-  const conselhos: string[] = []
-  const alertas: string[] = []
-
-  if (totalLeads === 0) {
-    resumo = 'Nenhum lead registrado no pipeline durante esta semana.'
-    destaques.push('📭 Aguardando novas oportunidades de captação de leads.')
-    conselhos.push('Revise o funcionamento das campanhas de tráfego pago e as integrações de WhatsApp/Site.')
-    alertas.push('🚨 Sem fluxo de leads nesta semana. Verifique o status das suas integrações.')
-  } else {
-    resumo = `Operamos um volume de ${totalLeads} lead(s) esta semana, dos quais ${qualificados} foram qualificado(s). Registramos ${agendamentos} agendamento(s) no período.`
-    
-    if (convertidos > 0) {
-      resumo += ` Tivemos um ótimo desempenho com ${convertidos} conversão(ões) consolidada(s), gerando uma receita de ${formatCurrency(receita)}.`
-      destaques.push(`🏆 ${convertidos} venda(s) fechada(s) totalizando ${formatCurrency(receita)} em receita!`)
-    } else {
-      resumo += ' Ainda não registramos vendas fechadas neste período.'
-      alertas.push('⚠️ Nenhuma conversão (fechamento) registrada nesta semana. Acompanhe os agendamentos ativos.')
-    }
-
-    if (qualificados > 0) {
-      destaques.push(`📈 ${qualificados} lead(s) qualificado(s) avançando no pipeline de vendas.`)
-      conselhos.push('Priorize o atendimento dos leads qualificados para não perder o timing.')
-    }
-    
-    if (agendamentos > 0) {
-      destaques.push(`📅 ${agendamentos} visita(s) ou agendamento(s) ativo(s).`)
-      conselhos.push('Prepare material detalhado do imóvel (fotos, vídeos) antes das visitas agendadas.')
-    }
-
-    if (conselhos.length === 0) {
-      conselhos.push('Mantenha contato rápido com os novos leads nas primeiras 2 horas.')
-    }
-  }
-
-  return {
-    title: `Semana ${formatWeekPeriod(active.semana_inicio, active.semana_fim)}`,
-    resumo,
-    destaques,
-    conselhos,
-    alertas
-  }
+const activeWeek = computed(() => weeks.value.find(week => week.key === selectedWeek.value))
+const currentReport = computed(() => activeWeek.value ? summarizeWeek(activeWeek.value) : {
+  title: '', resumo: '', destaques: [], conselhos: [], alertas: [],
 })
-
-// Filtered activity log mapped to database weeks indices
-const filteredActivities = computed(() => {
-  if (!selectedWeek.value) return []
-  
-  const mockKeys = ['semana-1', 'semana-2', 'semana-3', 'semana-4']
-  if (mockKeys.includes(selectedWeek.value)) {
-    return activityLog.value.filter(a => a.week === selectedWeek.value)
-  }
-  
-  return dbActivities.value.filter(a => a.week === selectedWeek.value)
-})
-
-const paginatedActivities = computed(() => {
-  const start = (activityPage.value - 1) * activityPerPage
-  return filteredActivities.value.slice(start, start + activityPerPage)
-})
-
-const totalActivityPages = computed(() => 
-  Math.max(1, Math.ceil(filteredActivities.value.length / activityPerPage))
-)
 
 // Metric cards config
 const metricCards = computed(() => [
@@ -212,13 +63,8 @@ const metricCards = computed(() => [
   { title: 'Agendamentos', value: currentMetrics.value.agendamentos || 0, icon: Calendar, color: 'text-primary-600 dark:text-primary-400', bg: 'bg-primary-50 dark:bg-primary-500/10', border: 'border-primary-100 dark:border-primary-500/20' },
   { title: 'Convertidos', value: currentMetrics.value.convertidos || 0, icon: Handshake, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-50 dark:bg-teal-500/10', border: 'border-teal-100 dark:border-teal-500/20' },
   { title: 'Conversão', value: (currentMetrics.value.taxaConversao || 0) + '%', icon: TrendingUp, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10', border: 'border-amber-100 dark:border-amber-500/20' },
-  { title: 'Receita', value: formatCurrency(currentMetrics.value.receita || 0), icon: DollarSign, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-500/10', border: 'border-green-100 dark:border-green-500/20' },
+  { title: 'Valor previsto', value: formatCurrency(currentMetrics.value.receita || 0), icon: DollarSign, color: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-500/10', border: 'border-green-100 dark:border-green-500/20' },
 ])
-
-function formatCurrency(val: number) {
-  if (val >= 1000) return 'R$ ' + (val / 1000).toFixed(val % 1000 === 0 ? 0 : 1) + 'k'
-  return 'R$ ' + val
-}
 
 function getActivityIcon(type: string) {
   switch (type) {
@@ -301,146 +147,70 @@ const selectWeek = (key: string) => {
   weekDropdownOpen.value = false
 }
 
-const fetchData = async () => {
-  loading.value = true
-  try {
-    // Keep mock activity log
-    const { mockActivityLog } = useMockData()
-    activityLog.value = mockActivityLog
-    
-    // Fetch from Supabase view
-    const { data: dbData, error } = await supabase.from('vw_relatorio_semanal').select('*')
-    if (error) throw error
-    
-    if (dbData && dbData.length > 0) {
-      const sorted = [...dbData].sort((a, b) => b.semana_inicio.localeCompare(a.semana_inicio))
-      weeks.value = sorted.map((row, idx) => {
-        let short = `${idx} Sem. Atrás`
-        if (idx === 0) short = 'Esta Semana'
-        else if (idx === 1) short = 'Sem. Passada'
-        else if (idx === 2) short = '2 Sem. Atrás'
-        else if (idx === 3) short = '3 Sem. Atrás'
-        
-        return {
-          key: row.semana_inicio || '',
-          label: formatWeekPeriod(row.semana_inicio || '', row.semana_fim || ''),
-          short: short,
-          ...row
-        }
-      })
-      selectedWeek.value = weeks.value[0].key
-    } else {
-      // Default fallback current week
-      const { semana_inicio, semana_fim } = getStartAndEndOfWeek()
-      weeks.value = [{
-        key: semana_inicio,
-        label: formatWeekPeriod(semana_inicio, semana_fim),
-        short: 'Esta Semana',
-        semana_inicio,
-        semana_fim,
-        total_leads: 0,
-        leads_novos_parados: 0,
-        qualificados: 0,
-        agendamentos: 0,
-        convertidos: 0,
-        taxa_conversao: 0,
-        receita: 0
-      }]
-      selectedWeek.value = semana_inicio
-    }
-
-    // Fetch dynamic database activities
-    try {
-      const { data: leadsData } = await supabase
-        .from('leads')
-        .select('id, name, stage, expected_value, created_at')
-        .order('created_at', { ascending: false })
-        .limit(100)
-        
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select('id, created_at, status, leads(name)')
-        .order('created_at', { ascending: false })
-        .limit(100)
-        
-      const leadActivities: any[] = []
-      if (leadsData) {
-        leadsData.forEach((lead: any) => {
-          const weekStart = getWeekStartDate(lead.created_at)
-          // 1. New Lead
-          leadActivities.push({
-            id: `lead-new-${lead.id}`,
-            type: 'lead_new',
-            text: `Novo lead recebido: ${lead.name}`,
-            time: lead.created_at,
-            week: weekStart
-          })
-          if (['negociacao', 'visita'].includes(lead.stage)) {
-            leadActivities.push({
-              id: `lead-qual-${lead.id}`,
-              type: 'lead_qualified',
-              text: `Lead qualificado e avançado no pipeline: ${lead.name}`,
-              time: lead.created_at,
-              week: weekStart
-            })
-          }
-          // 3. Closed Lead
-          if (lead.stage === 'fechado') {
-            const valStr = lead.expected_value ? ` no valor de ${formatCurrency(Number(lead.expected_value))}` : ''
-            leadActivities.push({
-              id: `lead-closed-${lead.id}`,
-              type: 'deal_closed',
-              text: `Venda fechada com o cliente ${lead.name}${valStr}`,
-              time: lead.created_at,
-              week: weekStart
-            })
-          }
-        })
-      }
-      
-      const appointmentActivities: any[] = []
-      if (appointmentsData) {
-        appointmentsData.forEach((apt: any) => {
-          const weekStart = getWeekStartDate(apt.created_at)
-          const leadName = apt.leads ? (Array.isArray(apt.leads) ? apt.leads[0]?.name : apt.leads.name) || 'Cliente' : 'Cliente'
-          appointmentActivities.push({
-            id: `apt-${apt.id}`,
-            type: 'meeting_scheduled',
-            text: `Visita ou agendamento de reunião agendado com o lead: ${leadName}`,
-            time: apt.created_at,
-            week: weekStart
-          })
-        })
-      }
-      
-      const allDbActivities = [...leadActivities, ...appointmentActivities]
-      allDbActivities.sort((a, b) => b.time.localeCompare(a.time))
-      dbActivities.value = allDbActivities
-    } catch (dbErr) {
-      console.error('Error fetching dbActivities details:', dbErr)
-      dbActivities.value = []
-    }
-  } catch (e) {
-    console.error('Error loading weekly report data:', e)
-    // Gracious fallback to mock data on error so UI never crashes
-    const { mockWeeklyMetrics } = useMockData()
-    const fallbackWeeks = [
-      { key: 'semana-1', semana_inicio: '2026-02-24', semana_fim: '2026-03-02', label: '24 Fev – 02 Mar', short: 'Esta Semana', total_leads: mockWeeklyMetrics['semana-1'].totalLeads, leads_novos_parados: mockWeeklyMetrics['semana-1'].novosContatos, qualificados: mockWeeklyMetrics['semana-1'].qualificados, agendamentos: mockWeeklyMetrics['semana-1'].agendamentos, convertidos: mockWeeklyMetrics['semana-1'].convertidos, taxa_conversao: mockWeeklyMetrics['semana-1'].taxaConversao, receita: mockWeeklyMetrics['semana-1'].receita },
-      { key: 'semana-2', semana_inicio: '2026-02-17', semana_fim: '2026-02-23', label: '17 – 23 Fev', short: 'Sem. Passada', total_leads: mockWeeklyMetrics['semana-2'].totalLeads, leads_novos_parados: mockWeeklyMetrics['semana-2'].novosContatos, qualificados: mockWeeklyMetrics['semana-2'].qualificados, agendamentos: mockWeeklyMetrics['semana-2'].agendamentos, convertidos: mockWeeklyMetrics['semana-2'].convertidos, taxa_conversao: mockWeeklyMetrics['semana-2'].taxaConversao, receita: mockWeeklyMetrics['semana-2'].receita },
-      { key: 'semana-3', semana_inicio: '2026-02-10', semana_fim: '2026-02-16', label: '10 – 16 Fev', short: '2 Sem. Atrás', total_leads: mockWeeklyMetrics['semana-3'].totalLeads, leads_novos_parados: mockWeeklyMetrics['semana-3'].novosContatos, qualificados: mockWeeklyMetrics['semana-3'].qualificados, agendamentos: mockWeeklyMetrics['semana-3'].agendamentos, convertidos: mockWeeklyMetrics['semana-3'].convertidos, taxa_conversao: mockWeeklyMetrics['semana-3'].taxaConversao, receita: mockWeeklyMetrics['semana-3'].receita },
-      { key: 'semana-4', semana_inicio: '2026-02-03', semana_fim: '2026-02-09', label: '03 – 09 Fev', short: '3 Sem. Atrás', total_leads: mockWeeklyMetrics['semana-4'].totalLeads, leads_novos_parados: mockWeeklyMetrics['semana-4'].novosContatos, qualificados: mockWeeklyMetrics['semana-4'].qualificados, agendamentos: mockWeeklyMetrics['semana-4'].agendamentos, convertidos: mockWeeklyMetrics['semana-4'].convertidos, taxa_conversao: mockWeeklyMetrics['semana-4'].taxaConversao, receita: mockWeeklyMetrics['semana-4'].receita },
-    ]
-    weeks.value = fallbackWeeks
-    selectedWeek.value = 'semana-1'
-  } finally {
-    loading.value = false
+async function loadActivity(page = 1) {
+  const week = activeWeek.value
+  if (!week) return
+  const request = ++activityRequest
+  activityLoading.value = true
+  activityError.value = ''
+  const offset = (page - 1) * activityPerPage
+  const result = await supabase.from('crm_report_activity').select('id,created_at,type,text', { count: 'exact' })
+    .gte('created_at', startOfSaoPauloDay(week.semana_inicio))
+    .lt('created_at', startOfSaoPauloDay(addCalendarDays(week.semana_fim, 1)))
+    .order('created_at', { ascending: false }).order('id', { ascending: false })
+    .range(offset, offset + activityPerPage - 1)
+  if (request !== activityRequest) return
+  activityLoading.value = false
+  if (result.error) {
+    activityError.value = 'Não foi possível carregar as atividades desta semana.'
+    return
   }
+  activityCount.value = result.count ?? 0
+  activityPage.value = page
+  paginatedActivities.value = result.data ?? []
 }
 
-// Reset activity page on week change
-watch(selectedWeek, () => { activityPage.value = 1 })
+async function fetchData() {
+  loading.value = true
+  error.value = ''
+  const result = await supabase.from('crm_weekly_report')
+    .select('semana_inicio,semana_fim,total_leads,leads_novos_parados,qualificados,agendamentos,convertidos,taxa_conversao,receita')
+    .order('semana_inicio', { ascending: false })
+  loading.value = false
+  if (result.error) {
+    error.value = 'Não foi possível carregar o relatório semanal.'
+    return
+  }
+  weeks.value = (result.data as unknown as WeeklyReportRow[] ?? []).map((row, index) => ({
+    ...row,
+    key: row.semana_inicio,
+    label: formatWeek(row.semana_inicio, row.semana_fim),
+    short: index === 0 ? 'Esta semana' : formatWeek(row.semana_inicio, row.semana_fim),
+  }))
+  selectedWeek.value = weeks.value[0]?.key ?? ''
+}
 
-onMounted(() => { fetchData() })
+function exportWeek() {
+  const row = activeWeek.value
+  if (!row) return
+  const header = 'Semana;Leads;Qualificados;Agendamentos;Fechados;Conversão (%);Valor previsto'
+  const values = [row.semana_inicio, row.total_leads, row.qualificados, row.agendamentos,
+    row.convertidos, row.taxa_conversao, row.receita]
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + header + '\n' + values.join(';')], { type: 'text/csv;charset=utf-8;' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'relatorio-' + row.semana_inicio + '.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+watch(selectedWeek, () => {
+  activityPage.value = 1
+  activityCount.value = 0
+  paginatedActivities.value = []
+  void loadActivity()
+})
+onMounted(fetchData)
 </script>
 
 <template>
@@ -449,7 +219,7 @@ onMounted(() => { fetchData() })
 
     <main :class="[mainMargin, 'p-8 transition-all duration-300']">
       <!-- Header -->
-      <header class="mb-8 flex items-center justify-between">
+      <header class="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-4">
           <div class="p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-xl text-primary-500">
             <BarChart3 class="w-6 h-6" />
@@ -493,7 +263,7 @@ onMounted(() => { fetchData() })
             </Transition>
           </div>
 
-          <button class="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-xl shadow-sm text-xs font-semibold hover:bg-primary-600 transition-all">
+          <button @click="exportWeek" :disabled="!activeWeek" class="flex items-center gap-2 px-4 py-2 bg-primary-500 text-white rounded-xl shadow-sm text-xs font-semibold hover:bg-primary-600 transition-all">
             <Download class="w-3.5 h-3.5" />
             Exportar
           </button>
@@ -505,7 +275,10 @@ onMounted(() => { fetchData() })
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
       </div>
 
-      <template v-else>
+      <div v-else-if="error" role="alert" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">
+        {{ error }} <button type="button" class="underline" @click="fetchData">Tentar novamente</button>
+      </div>
+      <template v-else-if="activeWeek">
         <!-- Week Title Banner -->
         <div class="mb-6 flex items-center gap-3">
           <div class="flex items-center gap-2 bg-white dark:bg-dark-surface border border-gray-100 dark:border-dark-border rounded-xl px-5 py-3">
@@ -667,11 +440,15 @@ onMounted(() => { fetchData() })
               <h2 class="text-sm font-bold text-gray-900 dark:text-white">Registro de Atividade</h2>
             </div>
             <span class="text-[11px] text-gray-400 dark:text-dark-muted font-medium px-2.5 py-1 rounded-lg bg-gray-50 dark:bg-dark-card border border-gray-100 dark:border-dark-border">
-              {{ filteredActivities.length }} registros
+              {{ activityCount }} registros
             </span>
           </div>
 
-          <div v-if="filteredActivities.length === 0" class="p-10 text-center text-gray-400 dark:text-dark-muted text-sm">
+          <div v-if="activityError" role="alert" class="p-6 text-sm text-red-600">
+            {{ activityError }} <button type="button" class="underline" @click="loadActivity(activityPage)">Tentar novamente</button>
+          </div>
+          <div v-else-if="activityLoading" class="p-6 text-center text-sm text-gray-500">Carregando atividades…</div>
+          <div v-else-if="activityCount === 0" class="p-10 text-center text-gray-400 dark:text-dark-muted text-sm">
             Nenhuma atividade registrada nesta semana.
           </div>
 
@@ -683,7 +460,7 @@ onMounted(() => { fetchData() })
               <div class="flex-1 min-w-0">
                 <p class="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{{ item.text }}</p>
                 <div class="flex items-center gap-2 mt-1">
-                  <span class="text-[10px] text-gray-400 dark:text-dark-muted">{{ timeAgo(item.time) }}</span>
+                  <span class="text-[10px] text-gray-400 dark:text-dark-muted">{{ timeAgo(item.created_at) }}</span>
                   <span :class="['text-[9px] font-semibold px-1.5 py-0.5 rounded-md', getActivityColor(item.type)]">
                     {{ getActivityLabel(item.type) }}
                   </span>
@@ -692,28 +469,8 @@ onMounted(() => { fetchData() })
             </div>
           </div>
 
-          <!-- Pagination -->
-          <div v-if="totalActivityPages > 1" class="px-6 py-3 border-t border-gray-100 dark:border-dark-border flex items-center justify-between">
-            <p class="text-[11px] text-gray-400 dark:text-dark-muted">
-              Página {{ activityPage }} de {{ totalActivityPages }}
-            </p>
-            <div class="flex gap-1.5">
-              <button 
-                @click="activityPage = Math.max(1, activityPage - 1)" 
-                :disabled="activityPage <= 1" 
-                :class="['p-1.5 rounded-lg text-xs transition-all border', activityPage <= 1 ? 'text-gray-300 dark:text-gray-600 border-transparent cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-dark-card border-gray-100 dark:border-dark-border']"
-              >
-                <ChevronLeft class="w-3.5 h-3.5" />
-              </button>
-              <button 
-                @click="activityPage = Math.min(totalActivityPages, activityPage + 1)" 
-                :disabled="activityPage >= totalActivityPages" 
-                :class="['p-1.5 rounded-lg text-xs transition-all border', activityPage >= totalActivityPages ? 'text-gray-300 dark:text-gray-600 border-transparent cursor-not-allowed' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-dark-card border-gray-100 dark:border-dark-border']"
-              >
-                <ChevronRight class="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
+          <CrmPagination :page="activityPage" :page-size="activityPerPage" :total="activityCount"
+            :loading="activityLoading" label="atividades" @change="loadActivity" />
         </div>
       </template>
     </main>

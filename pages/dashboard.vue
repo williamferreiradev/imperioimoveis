@@ -20,6 +20,7 @@ import {
 } from 'lucide-vue-next'
 import LeadDetailsModal from '@/components/leads/LeadDetailsModal.vue'
 import type { Cliente } from '@/types/crm'
+import { addCalendarDays, leadPageColumns, qualifiedStages, startOfSaoPauloDay } from '@/utils/crmQueries'
 
 definePageMeta({
   // middleware: 'auth'
@@ -28,302 +29,195 @@ definePageMeta({
 const { mainMargin } = useSidebarState()
 const supabase = useSupabaseClient<any>()
 
-interface Lead {
-  id: string
-  name: string
-  avatar: string
-  phone: string
-  interested: boolean
-  product: string
-  status: 'active' | 'locked'
-  media_url?: string
-  created_at: string
-}
-
-// Reactive State
 const activeTab = ref<'geral' | 'perdidos'>('geral')
-const leads = ref<Lead[]>([])
 const stages = ref<any[]>([])
-const metrics = reactive({
-  total: 0,
-  appointments: 0,
-  newLeads: 0,
-  locked: 0
-})
-const loading = ref(true)
-const showModal = ref(false)
+const metrics = ref<{ total: number; appointments: number; newLeads: number } | null>(null)
+const loadError = ref('')
 const selectedLead = ref<Cliente | null>(null)
-const fullLeadsData = ref<any[]>([])
-
-// Computados de Leads Perdidos
-const lostLeads = computed(() => {
-  return fullLeadsData.value.filter((l: any) => 
-    l.stage === 'perdido' || 
-    l.situacao_nome === 'perdido' || 
-    l.estagiokanbam === 'perdido' ||
-    l.status_crm === 'perdido' ||
-    l.ativo === false
-  )
-})
-
-const lostLeadsNoBroker = computed(() => {
-  return lostLeads.value.filter((l: any) => !l.corretor_id && (!l.corretor || l.corretor === 'Sem Corretor'))
-})
-
-const exportLostLeadsCSV = () => {
-  const data = lostLeadsNoBroker.value.length > 0 ? lostLeadsNoBroker.value : [
-    { name: 'Ana Clara Moreira', phone: '5511991234567', created_at: new Date().toISOString() },
-    { name: 'Marcos Vinícius', phone: '5511976543210', created_at: new Date().toISOString() },
-    { name: 'Patrícia Gomes', phone: '5521965432109', created_at: new Date().toISOString() }
-  ]
-  
-  const csvHeader = 'Nome,Telefone,Status,Corretor,Data_Criacao\n'
-  const csvRows = data.map((l: any) => {
-    const name = `"${(l.name || 'Sem nome').replace(/"/g, '""')}"`
-    const phone = `"${(l.phone || l.remotejid || '').replace(/"/g, '""')}"`
-    const status = `"Perdido"`
-    const corretor = `"Sem Corretor"`
-    const date = `"${l.created_at || ''}"`
-    return `${name},${phone},${status},${corretor},${date}`
-  }).join('\n')
-
-  const blob = new Blob(['\uFEFF' + csvHeader + csvRows], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `leads_perdidos_sem_corretor_${new Date().toISOString().split('T')[0]}.csv`
-  link.click()
-  URL.revokeObjectURL(link.href)
-}
-
-// Filter State
+const showModal = ref(false)
 const showFilters = ref(false)
 const filterStatus = ref<'all' | 'active' | 'locked'>('all')
 const filterInterest = ref<'all' | 'yes' | 'no'>('all')
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
-const filterProduct = ref<'all' | string>('all')
-
-// Pagination State
+const filterProduct = ref('all')
 const currentPage = ref(1)
-const itemsPerPage = 5
+const itemsPerPage = 10
+const filteredTotal = ref(0)
+const loading = ref(true)
+const paginatedLeads = ref<any[]>([])
+const lostRows = ref<any[]>([])
+const lostTotal = ref(0)
+const lostWithoutBrokerTotal = ref(0)
+const lostPage = ref(1)
+const lostLoading = ref(false)
+const exportLoading = ref(false)
+const lostFilter = 'stage.eq.perdido,situacao_nome.eq.perdido,ativo.eq.false'
+let pageRequest = 0
+let detailRequest = 0
 
-// Computed filtered leads
-const filteredLeads = computed(() => {
-  let result = [...leads.value]
-  
-  if (filterStatus.value !== 'all') {
-    result = result.filter(l => l.status === filterStatus.value)
-  }
-  
-  if (filterInterest.value !== 'all') {
-    result = result.filter(l => filterInterest.value === 'yes' ? l.interested : !l.interested)
-  }
+const hasActiveFilters = computed(() => filterStatus.value !== 'all' || filterInterest.value !== 'all'
+  || filterProduct.value !== 'all' || !!filterDateFrom.value || !!filterDateTo.value)
 
-  if (filterDateFrom.value) {
-    const fromDate = new Date(`${filterDateFrom.value}T00:00:00`)
-    result = result.filter(l => {
-      const lDate = new Date(l.created_at)
-      return lDate >= fromDate
-    })
-  }
-
-  if (filterDateTo.value) {
-    const toDate = new Date(`${filterDateTo.value}T23:59:59`)
-    result = result.filter(l => {
-      const lDate = new Date(l.created_at)
-      return lDate <= toDate
-    })
-  }
-  
-  return result
-})
-
-// Computed pagination
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredLeads.value.length / itemsPerPage)))
-
-const visiblePages = computed(() => {
-  const total = totalPages.value
-  const current = currentPage.value
-  
-  if (total <= 7) {
-    return Array.from({ length: total }, (_, i) => i + 1)
-  }
-  
-  if (current <= 4) {
-    return [1, 2, 3, 4, 5, '...', total]
-  }
-  
-  if (current >= total - 3) {
-    return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
-  }
-  
-  return [1, '...', current - 1, current, current + 1, '...', total]
-})
-
-const paginatedLeads = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage
-  return filteredLeads.value.slice(start, start + itemsPerPage)
-})
-
-const goToPage = (page: number) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
-// Reset to page 1 when filters change
-watch([filterStatus, filterInterest, filterDateFrom, filterDateTo, filterProduct], () => {
-  currentPage.value = 1
-})
-
-const clearFilters = () => {
+function clearFilters() {
   filterStatus.value = 'all'
   filterInterest.value = 'all'
+  filterProduct.value = 'all'
+  filterDateFrom.value = ''
+  filterDateTo.value = ''
 }
 
-const hasActiveFilters = computed(() => filterStatus.value !== 'all' || filterInterest.value !== 'all')
-
-// Fetch Data Supabase
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const { data: stagesData, error: stagesError } = await supabase.from('stage').select('*').order('id')
-    if (stagesError) throw stagesError
-    stages.value = stagesData || []
-
-    const { data: leadsData, error } = await supabase
-      .from('leads')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-
-    fullLeadsData.value = leadsData || []
-
-    let total = 0
-    let newLeads = 0
-    let locked = 0
-
-    const { count: appointmentsCount, error: apptError } = await supabase
-      .from('appointments')
-      .select('*', { count: 'exact', head: true })
-
-    if (apptError) {
-      console.error('Error fetching appointments:', apptError)
-    }
-
-    const now = new Date()
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-
-    leads.value = (leadsData || []).map((item: any) => {
-      total++
-      
-      const isInterested = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(item.stage)
-      
-      const isLocked = item.agent_active === false
-      if (isLocked) locked++
-
-      const itemDate = new Date(item.created_at)
-      if (itemDate >= sevenDaysAgo) newLeads++
-
-      return {
-        id: item.id,
-        name: item.name || 'Sem nome',
-        avatar: (item.name || 'U').charAt(0).toUpperCase(),
-        media_url: undefined,
-        phone: item.phone || '',
-        interested: isInterested,
-        product: item.source || 'Não informado',
-        status: isLocked ? 'locked' : 'active',
-        created_at: item.created_at
-      }
-    })
-
-    metrics.total = total
-    metrics.appointments = appointmentsCount || 0
-    metrics.newLeads = newLeads
-    metrics.locked = locked
-
-  } catch (error) {
-    console.error('Error fetching dashboard data:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
-const openLeadDetails = (leadId: string) => {
-  const fullLead = fullLeadsData.value.find((l: any) => l.id === leadId)
-  if (fullLead) {
-    selectedLead.value = fullLead as Cliente
-    showModal.value = true
-  }
-}
-
-const openChat = (leadId: string) => {
-  navigateTo(`/chats?clientId=${leadId}`)
-}
-
-const handleStatusUpdate = async (id: string, newStage: any) => {
-  let stageObj = newStage
-  if (typeof newStage === 'string') {
-    stageObj = stages.value.find((s: any) => s.estagio === newStage)
-  }
-  
-  if (!stageObj) {
-    console.error('Stage not found for status update:', newStage)
+async function loadMetrics() {
+  const now = new Date()
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000)
+  const [all, appointments, recent] = await Promise.all([
+    supabase.from('leads').select('id', { count: 'exact', head: true }),
+    supabase.from('appointments').select('id', { count: 'exact', head: true }),
+    supabase.from('leads').select('id', { count: 'exact', head: true })
+      .gte('created_at', sevenDaysAgo.toISOString()).lte('created_at', now.toISOString()),
+  ])
+  if (all.error || appointments.error || recent.error) {
+    loadError.value = 'Não foi possível carregar as métricas do dashboard.'
     return
   }
+  metrics.value = { total: all.count ?? 0, appointments: appointments.count ?? 0, newLeads: recent.count ?? 0 }
+}
 
-  const lead = fullLeadsData.value.find(l => l.id === id)
-  const isQual = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(stageObj.estagio)
-  if (lead) {
-    lead.stage = stageObj.estagio
-    lead.stage_id = stageObj.id
-    lead.is_qualified = isQual
+async function loadLeads(page = currentPage.value) {
+  const request = ++pageRequest
+  loading.value = true
+  let query = supabase.from('leads').select(leadPageColumns + ',source', { count: 'exact' })
+  if (filterStatus.value === 'locked') query = query.eq('agent_active', false)
+  if (filterStatus.value === 'active') query = query.or('agent_active.is.null,agent_active.eq.true')
+  if (filterInterest.value === 'yes') query = query.in('stage', qualifiedStages)
+  if (filterInterest.value === 'no') query = query.or('stage.is.null,stage.not.in.(' + qualifiedStages.join(',') + ')')
+  if (filterDateFrom.value) query = query.gte('created_at', startOfSaoPauloDay(filterDateFrom.value))
+  if (filterDateTo.value) query = query.lt('created_at', startOfSaoPauloDay(addCalendarDays(filterDateTo.value, 1)))
+  if (filterProduct.value !== 'all') query = query.eq('source', filterProduct.value)
+  const start = (page - 1) * itemsPerPage
+  const result = await query.order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
+    .range(start, start + itemsPerPage - 1)
+  if (request !== pageRequest) return
+  if (result.error) {
+    loadError.value = 'Não foi possível carregar os leads do dashboard.'
+    loading.value = false
+    return
   }
+  filteredTotal.value = result.count ?? 0
+  const last = Math.max(1, Math.ceil(filteredTotal.value / itemsPerPage))
+  if (page > last) return await loadLeads(last)
+  currentPage.value = page
+  paginatedLeads.value = ((result.data ?? []) as any[]).map(item => ({
+    ...item,
+    name: item.name || 'Sem nome',
+    avatar: (item.name || 'U').charAt(0).toUpperCase(),
+    interested: qualifiedStages.includes(item.stage),
+    product: item.source || 'Não informado',
+    status: item.agent_active === false ? 'locked' : 'active',
+  }))
+  loading.value = false
+}
 
-  // Also update local list if we show it
-  const localLead = leads.value.find(l => l.id === id)
-  if (localLead) {
-    localLead.interested = isQual
+async function loadLost(page = lostPage.value) {
+  lostLoading.value = true
+  const start = (page - 1) * itemsPerPage
+  const [all, unassigned] = await Promise.all([
+    supabase.from('leads').select('id', { count: 'exact', head: true }).or(lostFilter),
+    supabase.from('leads').select('id,name,phone,created_at', { count: 'exact' }).or(lostFilter)
+      .is('corretor_id', null).order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
+      .range(start, start + itemsPerPage - 1),
+  ])
+  if (all.error || unassigned.error) loadError.value = 'Não foi possível carregar os leads perdidos.'
+  else {
+    lostTotal.value = all.count ?? 0
+    lostWithoutBrokerTotal.value = unassigned.count ?? 0
+    lostRows.value = unassigned.data ?? []
+    lostPage.value = page
   }
+  lostLoading.value = false
+}
 
+async function exportLostLeadsCSV() {
+  exportLoading.value = true
   try {
-    const { error: updateError } = await supabase.from('leads').update({
-      stage: stageObj.estagio,
-      stage_id: stageObj.id
-    }).eq('id', id)
-    
-    if (updateError) {
-      console.error('Error updating status in DB:', updateError)
+    const rows: string[] = []
+    const escape = (value: unknown) => '"' + String(value ?? '').replace(/"/g, '""') + '"'
+    let cursor: string | undefined
+    while (true) {
+      let query = supabase.from('leads').select('id,name,phone,created_at').or(lostFilter).is('corretor_id', null)
+        .order('id').limit(200)
+      if (cursor) query = query.gt('id', cursor)
+      const { data, error } = await query
+      if (error) throw error
+      const batch = data ?? []
+      rows.push(...batch.map(lead => [lead.name, lead.phone, 'Perdido', 'Sem Corretor', lead.created_at].map(escape).join(',')))
+      if (batch.length < 200) break
+      cursor = batch.at(-1)?.id
     }
-  } catch (err) {
-    console.error('Error updating status:', err)
+    const blob = new Blob(['\uFEFFNome,Telefone,Status,Corretor,Data_Criacao\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = 'leads_perdidos_sem_corretor.csv'
+    link.click()
+    URL.revokeObjectURL(link.href)
+  } catch (error) {
+    loadError.value = 'Não foi possível exportar os leads perdidos.'
+  } finally {
+    exportLoading.value = false
   }
 }
 
-const handleNotesUpdate = async (id: string, notes: string) => {
-  const lead = fullLeadsData.value.find(l => l.id === id)
-  if (lead) {
-    lead.about = notes
+async function openLeadDetails(id: string) {
+  const request = ++detailRequest
+  const result = await supabase.from('leads').select('*').eq('id', id).maybeSingle()
+  if (request !== detailRequest) return
+  if (result.error || !result.data) {
+    loadError.value = 'Não foi possível carregar os detalhes do lead.'
+    return
   }
-  try {
-    await supabase.from('leads').update({ about: notes }).eq('id', id)
-  } catch (err) {
-    console.error('Error updating notes:', err)
+  selectedLead.value = result.data as Cliente
+  showModal.value = true
+}
+
+const openChat = (leadId: string) => navigateTo('/chats?clientId=' + leadId)
+
+async function handleStatusUpdate(id: string, stage: any) {
+  const stageObj = typeof stage === 'string' ? stages.value.find(s => s.estagio === stage) : stage
+  if (!stageObj) return
+  const { error } = await supabase.from('leads').update({ stage: stageObj.estagio, stage_id: stageObj.id }).eq('id', id)
+  if (error) loadError.value = 'Não foi possível atualizar a etapa.'
+  else {
+    if (selectedLead.value?.id === id) Object.assign(selectedLead.value, { stage: stageObj.estagio, stage_id: stageObj.id })
+    await loadLeads()
   }
 }
 
-onMounted(() => {
-  fetchData()
+async function handleNotesUpdate(id: string, notes: string) {
+  const { error } = await supabase.from('leads').update({ about: notes }).eq('id', id)
+  if (error) loadError.value = 'Não foi possível salvar a anotação.'
+  else if (selectedLead.value?.id === id) selectedLead.value.about = notes
+}
+
+watch([filterStatus, filterInterest, filterDateFrom, filterDateTo, filterProduct], () => { void loadLeads(1) })
+watch(activeTab, tab => {
+  loadError.value = ''
+  if (tab === 'perdidos') void loadLost()
 })
+
+onMounted(async () => {
+  void loadMetrics()
+  void loadLeads(1)
+  const result = await supabase.from('stage').select('id,estagio,estagio_name,descricao').order('id')
+  stages.value = result.data ?? []
+})
+onUnmounted(() => { ++pageRequest; ++detailRequest })
 </script>
 
 <template>
   <div class="min-h-screen text-gray-900 dark:text-dark-text font-sans transition-colors duration-300">
     <Sidebar />
 
-    <main :class="[mainMargin, 'p-10 transition-all duration-300']">
+    <main :class="[mainMargin, 'p-3 sm:p-5 xl:p-8 transition-all duration-300']">
       <!-- Header -->
       <header class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-8">
         <div>
@@ -355,6 +249,7 @@ onMounted(() => {
       </header>
 
       <!-- GERAL TAB CONTENT -->
+      <p v-if="loadError" role="alert" class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-300">{{ loadError }}</p>
       <div v-if="activeTab === 'geral'">
         <!-- Metrics Section -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
@@ -363,7 +258,7 @@ onMounted(() => {
           <div class="flex justify-between items-start mb-3">
             <div>
               <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Contatos Totais</p>
-              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics.total }}</h3>
+              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics?.total ?? '—' }}</h3>
             </div>
             <div class="p-2.5 bg-primary-50 dark:bg-primary-500/10 rounded-sm text-primary-500 group-hover:scale-110 transition-transform">
               <Users class="w-5 h-5" />
@@ -372,18 +267,18 @@ onMounted(() => {
           <p class="text-xs text-gray-400 dark:text-dark-muted">Clientes captados</p>
         </div>
 
-        <!-- Card 2: Visitas Agendadas -->
+        <!-- Card 2: Agendamentos -->
         <div class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100 dark:border-dark-border p-6 rounded-sm shadow-card hover:shadow-card-hover hover:border-emerald-500/30 transition-all duration-300 group">
           <div class="flex justify-between items-start mb-3">
             <div>
-              <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Visitas Agendadas</p>
-              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics.appointments }}</h3>
+              <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Agendamentos</p>
+              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics?.appointments ?? '—' }}</h3>
             </div>
             <div class="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-sm text-emerald-500 group-hover:scale-110 transition-transform">
               <TrendingUp class="w-5 h-5" />
             </div>
           </div>
-          <p class="text-xs text-gray-400 dark:text-dark-muted">Visitas aos imóveis pendentes</p>
+          <p class="text-xs text-gray-400 dark:text-dark-muted">Total de agendamentos registrados</p>
         </div>
 
         <!-- Card 3: Novos (7 dias) -->
@@ -391,13 +286,13 @@ onMounted(() => {
           <div class="flex justify-between items-start mb-3">
             <div>
               <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Novos (7 dias)</p>
-              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics.newLeads }}</h3>
+              <h3 class="text-3xl font-bold text-gray-900 dark:text-white">{{ metrics?.newLeads ?? '—' }}</h3>
             </div>
             <div class="p-2.5 bg-blue-50 dark:bg-blue-500/10 rounded-sm text-blue-500 group-hover:scale-110 transition-transform">
               <Clock class="w-5 h-5" />
             </div>
           </div>
-          <p class="text-xs text-gray-400 dark:text-dark-muted">Novos contatos esta semana</p>
+          <p class="text-xs text-gray-400 dark:text-dark-muted">Novos contatos nas últimas 168 horas</p>
         </div>
 
       </div>
@@ -418,7 +313,7 @@ onMounted(() => {
           
           <div class="flex items-center gap-2">
             <span class="text-gray-500 dark:text-dark-muted text-xs font-medium px-3 py-1.5 rounded-sm bg-gray-50 dark:bg-dark-card border border-gray-100 dark:border-dark-border">
-              {{ filteredLeads.length }} clientes
+              {{ filteredTotal }} clientes
             </span>
 
 
@@ -543,6 +438,7 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-50 dark:divide-dark-border">
+              <tr v-if="!paginatedLeads.length"><td colspan="6" class="p-6 text-center text-gray-500">{{ loading ? 'Carregando…' : 'Nenhum lead encontrado.' }}</td></tr>
               <tr v-for="lead in paginatedLeads" :key="lead.id" class="group hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors">
                 <!-- Nome -->
                 <td class="px-6 py-4">
@@ -615,61 +511,7 @@ onMounted(() => {
           </table>
         </div>
 
-        <!-- Footer / Pagination -->
-        <div class="px-6 py-4 border-t border-gray-100 dark:border-dark-border flex justify-between items-center">
-          <p class="text-xs text-gray-400 dark:text-dark-muted">
-            Mostrando <span class="text-gray-700 dark:text-white font-medium">{{ (currentPage - 1) * itemsPerPage + 1 }}-{{ Math.min(currentPage * itemsPerPage, filteredLeads.length) }}</span> 
-            de {{ filteredLeads.length }} clientes
-          </p>
-          
-          <div class="flex items-center gap-2">
-            <button 
-              @click="goToPage(currentPage - 1)" 
-              :disabled="currentPage <= 1"
-              :class="[
-                'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                currentPage <= 1 
-                  ? 'text-gray-300 dark:text-gray-600 border-gray-100 dark:border-dark-border cursor-not-allowed' 
-                  : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card hover:border-gray-300'
-              ]"
-            >
-              <ChevronLeft class="w-3.5 h-3.5" /> Anterior
-            </button>
-            
-            <div class="flex gap-1">
-              <template v-for="(page, index) in visiblePages" :key="index">
-                <span v-if="page === '...'" class="w-8 h-8 flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs font-medium">
-                  ...
-                </span>
-                <button 
-                  v-else
-                  @click="goToPage(page as number)"
-                  :class="[
-                    'w-8 h-8 rounded-lg text-xs font-medium transition-all flex items-center justify-center',
-                    page === currentPage 
-                      ? 'bg-primary-500 text-white shadow-sm' 
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-card'
-                  ]"
-                >
-                  {{ page }}
-                </button>
-              </template>
-            </div>
-
-            <button 
-              @click="goToPage(currentPage + 1)" 
-              :disabled="currentPage >= totalPages"
-              :class="[
-                'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                currentPage >= totalPages 
-                  ? 'text-gray-300 dark:text-gray-600 border-gray-100 dark:border-dark-border cursor-not-allowed' 
-                  : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card hover:border-gray-300'
-              ]"
-            >
-              Próxima <ChevronRight class="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        <CrmPagination :page="currentPage" :page-size="itemsPerPage" :total="filteredTotal" :loading="loading" label="leads" @change="loadLeads" />
       </div>
       </div>
 
@@ -682,7 +524,7 @@ onMounted(() => {
             <div class="flex justify-between items-start mb-3">
               <div>
                 <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Total Leads Perdidos</p>
-                <h3 class="text-3xl font-bold text-red-500">{{ lostLeads.length || 6 }}</h3>
+                <h3 class="text-3xl font-bold text-red-500">{{ lostTotal }}</h3>
               </div>
               <div class="p-2.5 bg-red-50 dark:bg-red-500/10 rounded-sm text-red-500">
                 <AlertTriangle class="w-5 h-5" />
@@ -696,7 +538,7 @@ onMounted(() => {
             <div class="flex justify-between items-start mb-3">
               <div>
                 <p class="text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider font-semibold mb-2">Perdidos Sem Corretor</p>
-                <h3 class="text-3xl font-bold text-amber-500">{{ lostLeadsNoBroker.length || 3 }}</h3>
+                <h3 class="text-3xl font-bold text-amber-500">{{ lostWithoutBrokerTotal }}</h3>
               </div>
               <div class="p-2.5 bg-amber-50 dark:bg-amber-500/10 rounded-sm text-amber-500">
                 <Users class="w-5 h-5" />
@@ -733,7 +575,7 @@ onMounted(() => {
             
             <div class="flex items-center gap-3">
               <button 
-                @click="exportLostLeadsCSV" 
+                @click="exportLostLeadsCSV" :disabled="exportLoading || !lostWithoutBrokerTotal"
                 class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-dark-border text-gray-700 dark:text-gray-200 text-xs font-semibold rounded-sm transition-colors"
               >
                 <FileSpreadsheet class="w-3.5 h-3.5 text-emerald-500" /> Baixar Planilha (CSV)
@@ -760,11 +602,8 @@ onMounted(() => {
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-border text-sm">
-                <tr v-for="lead in (lostLeadsNoBroker.length > 0 ? lostLeadsNoBroker : [
-                  { id: '1', name: 'Ana Clara Moreira', phone: '5511991234567', estagiokanbam: 'perdido', corretor: 'Sem Corretor' },
-                  { id: '2', name: 'Marcos Vinícius', phone: '5511976543210', estagiokanbam: 'perdido', corretor: 'Sem Corretor' },
-                  { id: '3', name: 'Patrícia Gomes', phone: '5521965432109', estagiokanbam: 'perdido', corretor: 'Sem Corretor' }
-                ])" :key="lead.id" class="hover:bg-gray-50/50 dark:hover:bg-dark-card/50 transition-colors">
+                <tr v-if="!lostRows.length"><td colspan="5" class="p-6 text-center text-gray-500">{{ lostLoading ? 'Carregando…' : 'Nenhum lead perdido sem corretor.' }}</td></tr>
+                <tr v-for="lead in lostRows" :key="lead.id" class="hover:bg-gray-50/50 dark:hover:bg-dark-card/50 transition-colors">
                   <td class="py-4 px-6 font-medium text-gray-900 dark:text-white flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-500/10 text-red-500 flex items-center justify-center text-xs font-bold">
                       {{ (lead.name || 'L').charAt(0) }}
@@ -798,6 +637,7 @@ onMounted(() => {
               </tbody>
             </table>
           </div>
+          <CrmPagination :page="lostPage" :page-size="itemsPerPage" :total="lostWithoutBrokerTotal" :loading="lostLoading" label="leads" @change="loadLost" />
         </div>
       </div>
     </main>

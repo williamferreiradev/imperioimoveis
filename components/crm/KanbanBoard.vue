@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import { Phone, Lock, Bot, Eye, EyeOff } from 'lucide-vue-next'
-import type { Cliente, CrmStatus } from '@/types/crm'
 
 const props = defineProps<{
-  leads: any[]
+  columns: Record<string, { leads: any[]; total: number; loading: boolean; error: string }>
   stages: any[]
 }>()
 
 const emit = defineEmits<{
+  (e: 'load-more', key: string, reset?: boolean): void
   (e: 'update-status', id: string, newStage: any): void
   (e: 'view-details', lead: any): void
 }>()
@@ -21,27 +21,24 @@ const kanbanRef = ref<HTMLElement | null>(null)
 let scrollInterval: ReturnType<typeof setInterval> | null = null
 const isDragging = ref(false)
 const hideNumbers = ref(false)
+const reducedMotion = ref(false)
+let motionPreference: MediaQueryList | undefined
 
-watch(() => props.leads, (newLeads) => {
-  if (!props.stages || isDragging.value) return
-  
-  const map: Record<string, any[]> = {}
-  props.stages.forEach(col => {
-    map[col.id] = newLeads.filter(l => {
-      if (l.stage_id === col.id) return true
-      if (!l.stage_id && l.stage === col.estagio) return true
-      if (!l.stage_id && col.estagio === 'novo') return true
-      return false
-    })
-  })
-  localColumns.value = map
-}, { deep: true, immediate: true })
+watch(() => props.stages.map(stage => props.columns[stage.estagio]?.leads), () => {
+  if (isDragging.value) return
+  localColumns.value = Object.fromEntries(props.stages.map(stage => [stage.id, [...(props.columns[stage.estagio]?.leads ?? [])]]))
+}, { immediate: true })
 
-const handleDragChange = (e: any, col: any) => {
-  if (e.added) {
-    const lead = e.added.element
-    emit('update-status', lead.id, col)
+function loadOnScroll(event: Event, key: string) {
+  const element = event.currentTarget as HTMLElement
+  const column = props.columns[key]
+  if (!isDragging.value && column && !column.error && element.scrollHeight - element.clientHeight - element.scrollTop < 280) {
+    emit('load-more', key)
   }
+}
+
+const handleDrop = (event: { data?: { id: string } }, stage: any) => {
+  if (event.data?.id) emit('update-status', event.data.id, stage)
 }
 
 // Auto-scroll logic
@@ -82,10 +79,14 @@ const stopDragScroll = () => {
 }
 
 onMounted(() => {
+  motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
+  reducedMotion.value = motionPreference.matches
+  motionPreference.addEventListener('change', updateMotion)
   document.addEventListener('mousemove', handleDragScroll)
   document.addEventListener('mouseup', stopDragScroll)
   document.addEventListener('dragend', stopDragScroll)
 })
+const updateMotion = (event: MediaQueryListEvent) => { reducedMotion.value = event.matches }
 
 const getStageColorClasses = (estagio: string) => {
   const norm = estagio?.toLowerCase() || '';
@@ -101,6 +102,7 @@ const getStageColorClasses = (estagio: string) => {
 
 onUnmounted(() => {
   stopDragScroll()
+  motionPreference?.removeEventListener('change', updateMotion)
   document.removeEventListener('mousemove', handleDragScroll)
   document.removeEventListener('mouseup', stopDragScroll)
   document.removeEventListener('dragend', stopDragScroll)
@@ -118,7 +120,7 @@ onUnmounted(() => {
       {{ hideNumbers ? 'Mostrar Números' : 'Ocultar Números' }}
     </button>
 
-    <div ref="kanbanRef" class="flex gap-5 overflow-x-auto pb-6 h-[calc(100vh-180px)] kanban-scroll">
+    <div ref="kanbanRef" class="flex gap-5 overflow-x-auto pb-3 h-full kanban-scroll">
       <div 
         v-for="col in stages" 
         :key="col.id" 
@@ -139,22 +141,24 @@ onUnmounted(() => {
               </span>
             </div>
             <span :class="['text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/60 dark:bg-black/20 shadow-sm', getStageColorClasses(col.estagio).text]">
-              {{ localColumns[col.id]?.length || 0 }}
+              {{ columns[col.estagio]?.loading && !columns[col.estagio]?.leads.length ? '…' : (columns[col.estagio]?.total ?? 0).toLocaleString('pt-BR') }}
             </span>
           </div>
         </div>
 
+        <div class="flex-1 min-h-0 overflow-y-auto" @scroll.passive="loadOnScroll($event, col.estagio)">
         <!-- Draggable Area -->
         <VueDraggable
           v-if="localColumns[col.id]"
           v-model="localColumns[col.id]"
           :group="{ name: 'crm-leads' }"
-          :animation="200"
+          :animation="reducedMotion ? 0 : 160"
+          :sort="false"
           ghost-class="ghost-card"
-          class="flex-1 flex flex-col gap-3 min-h-[100px] p-1 overflow-y-auto hide-scrollbar"
+          class="flex flex-col gap-3 min-h-[100px] p-1"
           @start="onDragStart"
           @end="onDragEnd"
-          @change="(e) => handleDragChange(e, col)"
+          @add="(e) => handleDrop(e, col)"
         >
           <div 
             v-for="lead in localColumns[col.id]"
@@ -167,7 +171,7 @@ onUnmounted(() => {
             <!-- Header: Avatar + Name -->
             <div class="flex items-center gap-3">
               <div v-if="lead.media_url" class="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden border border-gray-100 dark:border-dark-border">
-                <img :src="lead.media_url" :alt="lead.name || 'Avatar'" class="w-full h-full object-cover" />
+                <img :src="lead.media_url" loading="lazy" :alt="lead.name || 'Avatar'" class="w-full h-full object-cover" />
               </div>
               <div v-else class="w-12 h-12 rounded-xl bg-primary-50 dark:bg-primary-500/10 flex items-center justify-center text-lg font-serif font-bold text-primary-600 dark:text-primary-400 border border-primary-100 dark:border-primary-500/20">
                 {{ (lead.name || 'D').charAt(0).toUpperCase() }}
@@ -177,7 +181,7 @@ onUnmounted(() => {
               </div>
               <button 
                 @click="emit('view-details', lead)"
-                class="p-2 text-gray-400 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-all opacity-0 group-hover:opacity-100 bg-white/50 dark:bg-dark-bg/50 backdrop-blur-sm"
+                class="p-2 text-gray-500 hover:text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-all bg-white/50 dark:bg-dark-bg/50 backdrop-blur-sm"
                 title="Ver Detalhes"
               >
                 <Eye class="w-4 h-4" />
@@ -243,6 +247,17 @@ onUnmounted(() => {
             <span class="text-gray-400 dark:text-gray-500 text-xs font-medium uppercase tracking-wider">Vazio</span>
           </div>
         </VueDraggable>
+        <div class="px-2 py-3 text-center text-xs text-gray-600 dark:text-dark-muted">
+          <span v-if="columns[col.estagio]?.loading" role="status">Carregando leads…</span>
+          <button v-else-if="columns[col.estagio]?.error" type="button" class="min-h-9 rounded-md border px-3" @click="emit('load-more', col.estagio, true)">
+            {{ columns[col.estagio]?.error }} Tentar novamente
+          </button>
+          <button v-else-if="(columns[col.estagio]?.leads.length ?? 0) < (columns[col.estagio]?.total ?? 0)" type="button"
+            class="min-h-9 rounded-md border border-gray-200 px-3 hover:text-primary-600 dark:border-dark-border"
+            @click="emit('load-more', col.estagio)">Carregar mais leads</button>
+          <span v-else-if="columns[col.estagio]?.total === 0">Nenhum lead nesta etapa</span>
+        </div>
+        </div>
       </div>
     </div>
   </div>

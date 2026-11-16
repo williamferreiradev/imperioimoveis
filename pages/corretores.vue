@@ -161,7 +161,7 @@ const deleteCorretor = async (corretor: any) => {
   <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans selection:bg-primary-500 selection:text-white transition-colors duration-300">
     <Sidebar />
 
-    <main :class="[mainMargin, 'p-10 transition-all duration-300']">
+    <main :class="[mainMargin, 'p-3 sm:p-5 xl:p-8 transition-all duration-300']">
       <!-- Header -->
       <header class="mb-8">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Corretores</h1>
@@ -242,12 +242,13 @@ const deleteCorretor = async (corretor: any) => {
           </div>
         </div>
 
+        <div class="brokers-table">
         <!-- Table Header -->
-        <div class="px-6 py-3 bg-gray-50 dark:bg-dark-bg border-b border-gray-200 dark:border-dark-border grid grid-cols-12 gap-4 text-xs font-bold text-gray-500 dark:text-dark-muted uppercase tracking-wider">
-          <div class="col-span-4">Nome</div>
-          <div class="col-span-3">Telefone</div>
-          <div class="col-span-2 text-center">Quantidade de Leads</div>
-          <div class="col-span-3 text-right">Ações</div>
+        <div class="broker-grid broker-header px-4 sm:px-6 py-3 bg-gray-50 dark:bg-dark-bg border-b border-gray-200 dark:border-dark-border text-xs font-bold text-gray-500 dark:text-dark-muted uppercase tracking-wider">
+          <div>Nome</div>
+          <div>Telefone</div>
+          <div class="text-center">Quantidade de Leads</div>
+          <div class="text-right">Ações</div>
         </div>
 
         <!-- Contact List -->
@@ -267,12 +268,12 @@ const deleteCorretor = async (corretor: any) => {
             v-else
             v-for="corretor in filteredCorretores"
             :key="corretor.id"
-            class="px-6 py-4 bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-white/5 transition-all group grid grid-cols-12 gap-4 items-center"
+            class="broker-grid broker-row px-4 sm:px-6 py-4 bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-white/5 transition-all group items-center"
           >
             <!-- Name & Avatar -->
-            <div class="col-span-4 flex items-center gap-4">
+            <div class="broker-name min-w-0 flex items-center gap-3">
               <div v-if="corretor.media_url" class="w-10 h-10 rounded-xl flex-shrink-0 overflow-hidden border border-gray-200 dark:border-dark-border shadow-sm">
-                <img :src="corretor.media_url" :alt="corretor.nome || 'Avatar'" class="w-full h-full object-cover" />
+                <img loading="lazy" :src="corretor.media_url" :alt="corretor.nome || 'Avatar'" class="w-full h-full object-cover" />
               </div>
               <div v-else class="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-500 flex items-center justify-center font-bold text-lg flex-shrink-0 shadow-sm">
                 {{ (corretor.nome || 'C').charAt(0).toUpperCase() }}
@@ -285,26 +286,26 @@ const deleteCorretor = async (corretor: any) => {
             </div>
 
             <!-- Phone -->
-            <div class="col-span-3 flex items-center gap-2 text-sm text-gray-500 dark:text-dark-muted">
+            <div class="broker-phone min-w-0 flex items-center gap-2 text-sm text-gray-500 dark:text-dark-muted">
               <Phone class="w-3.5 h-3.5" />
-              <span>{{ corretor.telefone || '' }}</span>
+              <span class="truncate">{{ corretor.telefone || '' }}</span>
             </div>
 
             <!-- Leads Count -->
-            <div class="col-span-2 flex items-center justify-center">
+            <div class="broker-count flex items-center justify-center whitespace-nowrap">
               <span class="inline-flex items-center justify-center px-3 py-1 text-xs font-bold bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 border border-primary-200 dark:border-primary-500/20 rounded-full shadow-sm">
                 {{ corretor.leads_count || 0 }} leads
               </span>
             </div>
 
             <!-- Actions -->
-            <div class="col-span-3 flex items-center justify-end gap-2">
+            <div class="broker-actions flex flex-wrap items-center justify-end gap-1">
               
               <!-- Toggle Status Button -->
               <button
                 @click.stop="toggleStatus(corretor)"
                 :class="[
-                  'px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 transition-all w-[105px] justify-center',
+                  'px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 transition-all shrink-0 justify-center whitespace-nowrap',
                   corretor.ativo
                     ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20 hover:bg-emerald-100 dark:hover:bg-emerald-500/20' 
                     : 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-200 dark:border-red-500/20 hover:bg-red-100 dark:hover:bg-red-500/20'
@@ -346,6 +347,7 @@ const deleteCorretor = async (corretor: any) => {
             </div>
           </div>
         </div>
+        </div>
       </div>
     </main>
 
@@ -373,5 +375,30 @@ const deleteCorretor = async (corretor: any) => {
 }
 .slide-enter-to, .slide-leave-from {
   max-height: 200px;
+}
+</style>
+
+
+<style scoped>
+.brokers-table { container-type: inline-size; }
+.broker-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) max-content max-content;
+  gap: 0.75rem;
+}
+@container (max-width: 650px) {
+  .broker-header { display: none; }
+  .broker-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name count" "phone actions";
+  }
+  .broker-name { grid-area: name; }
+  .broker-phone { grid-area: phone; }
+  .broker-count { grid-area: count; justify-content: end; }
+  .broker-actions { grid-area: actions; }
+}
+@container (max-width: 390px) {
+  .broker-row { grid-template-areas: "name count" "phone phone" "actions actions"; }
+  .broker-actions { justify-content: start; }
 }
 </style>

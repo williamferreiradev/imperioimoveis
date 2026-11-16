@@ -4,15 +4,25 @@ import type { Cliente, CrmStatus } from '@/types/crm'
 
 defineProps<{
   leads: Cliente[]
+  page: number
+  pageSize: number
+  total: number
+  loading: boolean
 }>()
 
 const emit = defineEmits<{
+  (e: 'change-page', page: number): void
   (e: 'view-details', lead: Cliente): void
   (e: 'open-chat', leadId: string): void
 }>()
 
-const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
+const statusConfig: Record<string, { label: string; color: string }> = {
   novo: { label: 'Novo', color: 'bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400' },
+  em_atendimento: { label: 'Em Atendimento', color: 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300' },
+  negociacao: { label: 'Em Negociação', color: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
+  visita: { label: 'Visita', color: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300' },
+  agendamento: { label: 'Agendamento', color: 'bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300' },
+  fechado: { label: 'Venda Fechada', color: 'bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-300' },
   em_contato: { label: 'Em Contato', color: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400' },
   qualificado: { label: 'Qualificado', color: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
   convertido: { label: 'Convertido', color: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
@@ -22,10 +32,11 @@ const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
 
 <template>
   <div class="bg-white/80 dark:bg-dark-surface/80 backdrop-blur-xl border border-gray-100/50 dark:border-dark-border/50 rounded-sm overflow-hidden h-full flex flex-col shadow-card hover:shadow-card-hover transition-all duration-300">
-    <div class="overflow-y-auto flex-1">
+    <div class="overflow-auto flex-1">
       <table class="w-full text-left border-collapse">
         <thead class="sticky top-0 z-10">
           <tr class="border-b border-gray-100 dark:border-dark-border text-gray-400 dark:text-dark-muted text-xs uppercase tracking-wider bg-gray-50/80 dark:bg-dark-card/80 backdrop-blur-sm">
+            <th class="px-3 py-4 text-right font-medium">Contagem</th>
             <th class="px-6 py-4 font-medium">Nome</th>
             <th class="px-6 py-4 font-medium">Telefone</th>
             <th class="px-6 py-4 font-medium">Status (CRM)</th>
@@ -35,7 +46,9 @@ const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-50 dark:divide-dark-border">
-          <tr v-for="lead in leads" :key="lead.id" class="group hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors">
+          <tr v-if="!leads.length && !loading"><td colspan="7" class="p-8 text-center text-gray-500">Nenhum lead encontrado.</td></tr>
+          <tr v-for="(lead, index) in leads" :key="lead.id" class="group hover:bg-gray-50/50 dark:hover:bg-white/[0.02] transition-colors">
+            <td class="px-3 py-4 text-sm tabular-nums text-right text-gray-600 dark:text-dark-muted">{{ (page - 1) * pageSize + index + 1 }}</td>
             <!-- Nome -->
             <td class="px-6 py-4">
               <div class="flex items-center gap-3">
@@ -51,7 +64,7 @@ const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
 
             <!-- Telefone -->
             <td class="px-6 py-4">
-               <span class="text-gray-400 dark:text-dark-muted text-sm font-mono">{{ lead.remotejid }}</span>
+               <span class="text-gray-400 dark:text-dark-muted text-sm font-mono">{{ lead.phone || lead.remotejid || '—' }}</span>
             </td>
 
             <!-- Status -->
@@ -99,5 +112,6 @@ const statusConfig: Record<CrmStatus, { label: string; color: string }> = {
         </tbody>
       </table>
     </div>
+    <CrmPagination :page="page" :page-size="pageSize" :total="total" :loading="loading" label="leads" @change="emit('change-page', $event)" />
   </div>
 </template>

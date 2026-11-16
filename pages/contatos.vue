@@ -4,6 +4,7 @@ import { useSupabaseClient } from '#imports'
 import { User, Phone, Search, Filter, Calendar, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import LeadDetailsModal from '@/components/leads/LeadDetailsModal.vue'
 import type { Cliente } from '@/types/crm'
+import { addCalendarDays, leadPageColumns, searchLeadColumns, startOfSaoPauloDay } from '@/utils/crmQueries'
 
 const { mainMargin } = useSidebarState()
 const supabase = useSupabaseClient<any>()
@@ -24,112 +25,47 @@ const filterDateTo = ref('')
 const currentPage = ref(1)
 const itemsPerPage = 10
 
-// Fetch contacts REAL Supabase
-const fetchContacts = async () => {
+const totalContacts = ref(0)
+const filteredTotal = ref(0)
+const loadError = ref('')
+let request = 0
+let detailRequest = 0
+let refreshTimer: ReturnType<typeof setTimeout> | undefined
+let realtimeChannel: ReturnType<typeof supabase.channel> | undefined
+
+async function fetchContacts(page = currentPage.value) {
+  const id = ++request
   loading.value = true
-  
-  try {
-    const { data: stagesData, error: stagesError } = await supabase.from('stage').select('*').order('id')
-    if (stagesError) throw stagesError
-    stages.value = stagesData || []
-
-    const { data: leadsData, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
-    if (error) throw error
-    contacts.value = leadsData || []
-  } catch (error) {
-    console.error('Error fetching contacts:', error)
-  } finally {
+  loadError.value = ''
+  let query = supabase.from('leads').select(leadPageColumns, { count: 'exact' })
+  if (searchQuery.value.trim()) query = query.or(searchLeadColumns(searchQuery.value))
+  if (filterStage.value !== 'all') query = query.eq('stage', filterStage.value)
+  if (filterDateFrom.value) query = query.gte('created_at', startOfSaoPauloDay(filterDateFrom.value))
+  if (filterDateTo.value) query = query.lt('created_at', startOfSaoPauloDay(addCalendarDays(filterDateTo.value, 1)))
+  const offset = (page - 1) * itemsPerPage
+  const result = await query.order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
+    .range(offset, offset + itemsPerPage - 1)
+  if (id !== request) return
+  if (result.error) {
+    loadError.value = 'Não foi possível carregar os contatos.'
     loading.value = false
+    return
   }
-}
-
-let realtimeChannel: any
-
-const setupRealtime = () => {
-  realtimeChannel = supabase.channel('contacts_leads_changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'leads' },
-      (payload) => {
-        if (payload.eventType === 'INSERT') {
-          if (!contacts.value.find((l: any) => l.id === payload.new.id)) {
-            contacts.value.unshift(payload.new)
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          const idx = contacts.value.findIndex((l: any) => l.id === payload.new.id)
-          if (idx !== -1) {
-            Object.assign(contacts.value[idx], payload.new)
-          } else {
-            contacts.value.push(payload.new)
-          }
-        } else if (payload.eventType === 'DELETE') {
-          contacts.value = contacts.value.filter((l: any) => l.id !== payload.old.id)
-        }
-      }
-    )
-    .subscribe()
-}
-
-// Filtered contacts based on search + filters
-const filteredContacts = computed(() => {
-  let result = [...contacts.value]
-
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter((contact: any) => 
-      (contact.name?.toLowerCase().includes(query)) ||
-      (contact.phone?.toLowerCase().includes(query))
-    )
-  }
-
-  if (filterStage.value !== 'all') {
-    result = result.filter((c: any) => c.stage === filterStage.value)
-  }
-
-  if (filterDateFrom.value) {
-    const fromDate = new Date(`${filterDateFrom.value}T00:00:00`)
-    result = result.filter((c: any) => {
-      const cDate = new Date(c.created_at)
-      return cDate >= fromDate
-    })
-  }
-
-  if (filterDateTo.value) {
-    const toDate = new Date(`${filterDateTo.value}T23:59:59`)
-    result = result.filter((c: any) => {
-      const cDate = new Date(c.created_at)
-      return cDate <= toDate
-    })
-  }
-
-  return result
-})
-
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredContacts.value.length / itemsPerPage)))
-
-const visiblePages = computed(() => {
-  const total = totalPages.value
-  const current = currentPage.value
-  
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  if (current <= 4) return [1, 2, 3, 4, 5, '...', total]
-  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
-  return [1, '...', current - 1, current, current + 1, '...', total]
-})
-
-const paginatedContacts = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage
-  return filteredContacts.value.slice(start, start + itemsPerPage)
-})
-
-const goToPage = (page: number) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
+  filteredTotal.value = result.count ?? 0
+  const last = Math.max(1, Math.ceil(filteredTotal.value / itemsPerPage))
+  if (page > last) return await fetchContacts(last)
+  currentPage.value = page
+  contacts.value = result.data ?? []
+  if (!hasActiveFilters.value && !searchQuery.value.trim()) totalContacts.value = filteredTotal.value
+  loading.value = false
 }
 
 watch([filterStage, filterDateFrom, filterDateTo, searchQuery], () => {
+  clearTimeout(refreshTimer)
+  ++request
   currentPage.value = 1
+  loading.value = true
+  refreshTimer = setTimeout(() => { void fetchContacts(1) }, 220)
 })
 
 const hasActiveFilters = computed(() => filterStage.value !== 'all' || filterDateFrom.value || filterDateTo.value)
@@ -181,9 +117,15 @@ const getStageBadgeClass = (stage: string) => {
   }
 }
 
-// Open modal
-const openContactDetails = (contact: Cliente) => {
-  selectedContact.value = contact
+async function openContactDetails(contact: Pick<Cliente, 'id'>) {
+  const id = ++detailRequest
+  const result = await supabase.from('leads').select('*').eq('id', contact.id).maybeSingle()
+  if (id !== detailRequest) return
+  if (result.error || !result.data) {
+    loadError.value = 'Não foi possível carregar os detalhes do contato.'
+    return
+  }
+  selectedContact.value = result.data as Cliente
   showModal.value = true
 }
 
@@ -199,13 +141,6 @@ const handleStatusUpdate = async (id: string, newStage: any) => {
     return
   }
 
-  const contact = contacts.value.find(c => c.id === id)
-  const isQual = ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(stageObj.estagio)
-  if (contact) {
-    contact.stage = stageObj.estagio
-    contact.stage_id = stageObj.id
-    contact.is_qualified = isQual
-  }
   try {
     const { error: updateError } = await supabase.from('leads').update({
       stage_id: stageObj.id,
@@ -213,7 +148,10 @@ const handleStatusUpdate = async (id: string, newStage: any) => {
     }).eq('id', id)
     
     if (updateError) {
-      console.error('Error updating status in DB:', updateError)
+      loadError.value = 'Não foi possível atualizar a etapa.'
+    } else {
+      if (selectedContact.value?.id === id) Object.assign(selectedContact.value, { stage: stageObj.estagio, stage_id: stageObj.id })
+      await fetchContacts()
     }
   } catch (err) {
     console.error('Error updating status:', err)
@@ -233,15 +171,28 @@ const handleNotesUpdate = async (id: string, notes: string) => {
   }
 }
 
-onMounted(() => {
-  fetchContacts()
-  setupRealtime()
+onMounted(async () => {
+  void fetchContacts()
+  const result = await supabase.from('stage').select('id,estagio,estagio_name,descricao').order('id')
+  if (!result.error) stages.value = result.data ?? []
+  realtimeChannel = supabase.channel('contacts_leads_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+      clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(async () => {
+        await fetchContacts()
+        if (hasActiveFilters.value || searchQuery.value.trim()) {
+          const count = await supabase.from('leads').select('id', { count: 'exact', head: true })
+          if (!count.error) totalContacts.value = count.count ?? 0
+        }
+      }, 300)
+    }).subscribe()
 })
 
 onUnmounted(() => {
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel)
-  }
+  ++request
+  ++detailRequest
+  clearTimeout(refreshTimer)
+  if (realtimeChannel) supabase.removeChannel(realtimeChannel)
 })
 </script>
 
@@ -249,7 +200,7 @@ onUnmounted(() => {
   <div class="min-h-screen bg-gray-50 dark:bg-dark-bg text-gray-900 dark:text-white font-sans selection:bg-primary-500 selection:text-white transition-colors duration-300">
     <Sidebar />
 
-    <main :class="[mainMargin, 'p-10 transition-all duration-300']">
+    <main :class="[mainMargin, 'p-3 sm:p-5 xl:p-8 transition-all duration-300']">
       <!-- Header -->
       <header class="mb-8">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Contatos</h1>
@@ -280,7 +231,7 @@ onUnmounted(() => {
             </button>
 
             <span class="bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 text-xs font-bold px-3 py-1.5 rounded-full border border-gray-200 dark:border-white/10 shadow-inner">
-              {{ filteredContacts.length }} de {{ contacts.length }}
+              {{ filteredTotal }} de {{ totalContacts }}
             </span>
           </div>
         </div>
@@ -355,14 +306,17 @@ onUnmounted(() => {
           </div>
 
           <!-- Empty State -->
-          <div v-else-if="filteredContacts.length === 0" class="p-12 text-center">
+          <div v-else-if="loadError" class="p-8 text-center" role="alert">
+            {{ loadError }} <button type="button" class="underline" @click="fetchContacts()">Tentar novamente</button>
+          </div>
+          <div v-else-if="filteredTotal === 0" class="p-12 text-center">
             <p class="text-gray-500 dark:text-dark-muted">Nenhum interessado encontrado</p>
           </div>
 
           <!-- Contact Rows -->
           <div
             v-else
-            v-for="contact in paginatedContacts"
+            v-for="contact in contacts"
             :key="contact.id"
             @click="openContactDetails(contact)"
             class="px-6 py-4 bg-white dark:bg-dark-surface hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-all group grid grid-cols-12 gap-4 items-center"
@@ -407,61 +361,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Footer / Pagination -->
-        <div class="px-6 py-4 border-t border-gray-200 dark:border-dark-border flex justify-between items-center bg-white dark:bg-dark-surface">
-          <p class="text-xs text-gray-400 dark:text-dark-muted">
-            Mostrando <span class="text-gray-700 dark:text-white font-medium">{{ filteredContacts.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0 }}-{{ Math.min(currentPage * itemsPerPage, filteredContacts.length) }}</span> 
-            de {{ filteredContacts.length }} interessados
-          </p>
-          
-          <div class="flex items-center gap-2">
-            <button 
-              @click="goToPage(currentPage - 1)" 
-              :disabled="currentPage <= 1"
-              :class="[
-                'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                currentPage <= 1 
-                  ? 'text-gray-300 dark:text-gray-600 border-gray-100 dark:border-dark-border cursor-not-allowed' 
-                  : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card hover:border-gray-300'
-              ]"
-            >
-              <ChevronLeft class="w-3.5 h-3.5" /> Anterior
-            </button>
-            
-            <div class="flex gap-1">
-              <template v-for="(page, index) in visiblePages" :key="index">
-                <span v-if="page === '...'" class="w-8 h-8 flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs font-medium">
-                  ...
-                </span>
-                <button 
-                  v-else
-                  @click="goToPage(page as number)"
-                  :class="[
-                    'w-8 h-8 rounded-lg text-xs font-medium transition-all flex items-center justify-center',
-                    page === currentPage 
-                      ? 'bg-primary-500 text-white shadow-sm' 
-                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-dark-card'
-                  ]"
-                >
-                  {{ page }}
-                </button>
-              </template>
-            </div>
-
-            <button 
-              @click="goToPage(currentPage + 1)" 
-              :disabled="currentPage >= totalPages"
-              :class="[
-                'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
-                currentPage >= totalPages 
-                  ? 'text-gray-300 dark:text-gray-600 border-gray-100 dark:border-dark-border cursor-not-allowed' 
-                  : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-border hover:bg-gray-50 dark:hover:bg-dark-card hover:border-gray-300'
-              ]"
-            >
-              Próxima <ChevronRight class="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+        <CrmPagination :page="currentPage" :page-size="itemsPerPage" :total="filteredTotal" :loading="loading" label="contatos" @change="fetchContacts" />
       </div>
     </main>
   </div>

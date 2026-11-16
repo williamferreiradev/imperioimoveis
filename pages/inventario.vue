@@ -10,6 +10,7 @@ const supabase = useSupabaseClient<any>()
 // State
 const properties = ref<any[]>([])
 const loadingList = ref(true)
+const brokenImages = ref(new Set<string>())
 const searchQuery = ref('')
 
 // Modal state
@@ -32,7 +33,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const fetchProperties = async () => {
   loadingList.value = true
   try {
-    const { data, error } = await supabase.from('fotos_pneus').select('*').order('created_at', { ascending: false })
+    const { data, error } = await supabase.from('fotos_pneus').select('id,nome,valor,descricao,url,created_at').order('created_at', { ascending: false })
     if (error) throw error
     properties.value = data || []
   } catch (error) {
@@ -242,7 +243,7 @@ const confirmDelete = async (id: number) => {
                 <td class="py-4 px-6">
                   <div class="flex items-center gap-4">
                     <div class="w-16 h-12 rounded-sm overflow-hidden border border-gray-200 dark:border-white/10 shrink-0 bg-gray-100 flex items-center justify-center text-gray-400">
-                      <img v-if="property.url" :src="property.url" :alt="property.nome" class="w-full h-full object-cover" />
+                      <img v-if="property.url && !brokenImages.has(property.url)" loading="lazy" @error="brokenImages.add(property.url)" :src="property.url" :alt="property.nome" class="w-full h-full object-cover" />
                       <Building v-else class="w-5 h-5 opacity-50" />
                     </div>
                     <div>

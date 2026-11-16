@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { 
   Clock, 
   Search, 
@@ -18,6 +18,7 @@ import {
 import LeadDetailsModal from '@/components/leads/LeadDetailsModal.vue'
 import type { Cliente, CrmStatus } from '@/types/crm'
 import { useSupabaseClient } from '#imports'
+import { leadPageColumns, searchLeadColumns } from '@/utils/crmQueries'
 
 const { mainMargin } = useSidebarState()
 const supabase = useSupabaseClient<any>()
@@ -36,34 +37,56 @@ const selectedStage = ref<string>('todos')
 const currentPage = ref(1)
 const itemsPerPage = 15
 
-// Fetch Data: all leads without broker (corretor_id is null)
-const fetchLeads = async () => {
+const filteredTotal = ref(0)
+const stageCounts = ref<Record<string, number>>({})
+const exporting = ref(false)
+const searchColumns = ['name', 'phone', 'about', 'tipo_imovel', 'localizacao', 'situacao_nome']
+let request = 0
+let detailRequest = 0
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+
+function waitingStageFilter(key: string) {
+  const stage = stages.value.find(item => item.estagio === key)
+  const stageId = stage ? 'stage_id.eq.' + stage.id + ',' : ''
+  const fallback = key === 'novo' ? ',and(stage_id.is.null,stage.is.null,situacao_nome.is.null)' : ''
+  return stageId + 'and(stage_id.is.null,stage.eq.' + key + '),and(stage_id.is.null,stage.is.null,situacao_nome.eq.' + key + ')' + fallback
+}
+
+function waitingQuery(columns: string, count = false, stageKey = selectedStage.value, term = searchText.value) {
+  let query = supabase.from('leads').select(columns, count ? { count: 'exact' } : undefined).is('corretor_id', null)
+  if (stageKey !== 'todos') query = query.or(waitingStageFilter(stageKey))
+  if (term.trim()) query = query.or(searchLeadColumns(term, searchColumns))
+  return query
+}
+
+async function fetchLeads() {
+  const id = ++request
   loading.value = true
   error.value = null
-  
-  try {
-    const { data: stagesData, error: stagesError } = await supabase
-      .from('stage')
-      .select('*')
-      .order('id')
-      
-    if (stagesError) throw stagesError
-    stages.value = stagesData || []
-
-    const { data: leadsData, error: leadsError } = await supabase
-      .from('leads')
-      .select('*')
-      .is('corretor_id', null)
-      .order('created_at', { ascending: false })
-      
-    if (leadsError) throw leadsError
-    leads.value = leadsData || []
-  } catch (err: any) {
-    console.error('Erro ao buscar leads em espera:', err)
-    error.value = err.message || err
-  } finally {
-    loading.value = false
+  const offset = (currentPage.value - 1) * itemsPerPage
+  const result = await waitingQuery(leadPageColumns + ',tipo_imovel,localizacao,situacao_nome,source', true)
+    .order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
+    .range(offset, offset + itemsPerPage - 1)
+  if (id !== request) return
+  loading.value = false
+  if (result.error) {
+    error.value = 'Não foi possível carregar os leads em espera.'
+    return
   }
+  filteredTotal.value = result.count ?? 0
+  if (currentPage.value > totalPages.value) { currentPage.value = totalPages.value; return }
+  leads.value = result.data ?? []
+}
+
+async function loadStageCounts() {
+  const keys = ['todos', ...stages.value.map(stage => stage.estagio)]
+  const counts = await Promise.all(keys.map(async key => {
+    let query = supabase.from('leads').select('id', { head: true, count: 'exact' }).is('corretor_id', null)
+    if (key !== 'todos') query = query.or(waitingStageFilter(key))
+    const result = await query
+    return [key, result.error ? 0 : result.count ?? 0] as const
+  }))
+  stageCounts.value = Object.fromEntries(counts)
 }
 
 // Stage Helpers
@@ -111,74 +134,18 @@ const getStageBadgeClass = (stageSlug?: string | null, stageId?: number | null) 
   }
 }
 
-// Stage counts computed for filter chips
-const stageCounts = computed(() => {
-  const counts: Record<string, number> = { todos: leads.value.length }
-  leads.value.forEach((l: any) => {
-    const st = l.stage || l.situacao_nome || 'novo'
-    counts[st] = (counts[st] || 0) + 1
-  })
-  return counts
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredTotal.value / itemsPerPage)))
+
+watch([searchText, selectedStage], () => {
+  ++request
+  loading.value = true
+  currentPage.value = 1
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => { void fetchLeads() }, 250)
 })
-
-// Unified Filtered Leads (Search + Stage Filter)
-const filteredLeads = computed(() => {
-  let result = [...leads.value]
-
-  // Stage filter
-  if (selectedStage.value !== 'todos') {
-    result = result.filter((l: any) => {
-      const st = l.stage || l.situacao_nome || 'novo'
-      return st === selectedStage.value || String(l.stage_id) === String(selectedStage.value)
-    })
-  }
-
-  // Unified Search Text (name, phone, email, about, property code, etc.)
-  if (searchText.value.trim()) {
-    const query = searchText.value.toLowerCase().trim()
-    result = result.filter((lead: any) => {
-      const name = lead.name ? String(lead.name).toLowerCase() : ''
-      const phone = lead.phone ? String(lead.phone).toLowerCase() : ''
-      const remotejid = lead.remotejid ? String(lead.remotejid).toLowerCase() : ''
-      const email = lead.email ? String(lead.email).toLowerCase() : ''
-      const about = lead.about ? String(lead.about).toLowerCase() : ''
-      const tipoImovel = lead.tipo_imovel ? String(lead.tipo_imovel).toLowerCase() : ''
-      const localizacao = lead.localizacao ? String(lead.localizacao).toLowerCase() : ''
-      const situacao = lead.situacao_nome ? String(lead.situacao_nome).toLowerCase() : ''
-      const propertyCode = lead.metadata?.propertyCode ? String(lead.metadata.propertyCode).toLowerCase() : ''
-
-      return (
-        name.includes(query) ||
-        phone.includes(query) ||
-        remotejid.includes(query) ||
-        email.includes(query) ||
-        about.includes(query) ||
-        tipoImovel.includes(query) ||
-        localizacao.includes(query) ||
-        situacao.includes(query) ||
-        propertyCode.includes(query)
-      )
-    })
-  }
-
-  return result
-})
-
-// Pagination
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredLeads.value.length / itemsPerPage)))
-
-const paginatedLeads = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage
-  return filteredLeads.value.slice(start, start + itemsPerPage)
-})
-
-const visiblePages = computed(() => {
-  const total = totalPages.value
-  const current = currentPage.value
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  if (current <= 4) return [1, 2, 3, 4, 5, '...', total]
-  if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total]
-  return [1, '...', current - 1, current, current + 1, '...', total]
+watch(currentPage, () => {
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => { void fetchLeads() }, 250)
 })
 
 const handleStageSelect = (stageKey: string) => {
@@ -192,8 +159,15 @@ const clearSearch = () => {
 }
 
 // Actions & Modal Handlers
-const openLeadDetails = (lead: Cliente) => {
-  selectedLead.value = lead
+async function openLeadDetails(lead: Pick<Cliente, 'id'>) {
+  const id = ++detailRequest
+  const result = await supabase.from('leads').select('*').eq('id', lead.id).maybeSingle()
+  if (id !== detailRequest) return
+  if (result.error || !result.data) {
+    error.value = 'Não foi possível abrir os detalhes.'
+    return
+  }
+  selectedLead.value = result.data as Cliente
   showModal.value = true
 }
 
@@ -212,12 +186,6 @@ const handleStatusUpdate = async (id: string, newStage: any) => {
     return
   }
 
-  const lead = leads.value.find((l: any) => l.id === id)
-  if (lead) {
-    lead.stage_id = stageObj.id
-    lead.stage = stageObj.estagio
-  }
-
   try {
     const { error: updateError } = await supabase.from('leads').update({
       stage_id: stageObj.id,
@@ -225,8 +193,12 @@ const handleStatusUpdate = async (id: string, newStage: any) => {
     }).eq('id', id)
     
     if (updateError) {
-      console.error('Erro ao atualizar status:', updateError)
+      error.value = 'Não foi possível atualizar a etapa.'
     }
+    if (!updateError && selectedLead.value?.id === id) {
+      Object.assign(selectedLead.value, { stage: stageObj.estagio, stage_id: stageObj.id })
+    }
+    await Promise.all([fetchLeads(), loadStageCounts()])
   } catch (err) {
     console.error('Erro ao atualizar status:', err)
   }
@@ -245,7 +217,10 @@ const handleNotesUpdate = async (id: string, notes: string) => {
 }
 
 // Export CSV
-const downloadCSV = () => {
+const downloadCSV = async () => {
+  if (exporting.value) return
+  exporting.value = true
+  try {
   const columns = [
     'id', 'name', 'phone', 'stage', 'agent_active', 'created_at', 'source', 'expected_value', 'about', 'ativo', 'stage_id', 'ultima_mensagem_at', 'corretor_id', 'tipo_imovel', 'localizacao', 'situacao_nome', 'profissao', 'tempo_trabalho', 'renda_mensal', 'tipo_renda', 'doc_cpf', 'doc_rg', 'doc_certidao', 'doc_residencia', 'doc_carteira_trabalho', 'doc_contracheque', 'doc_movimentacao', 'url_cpf', 'url_rg', 'url_certidao', 'url_residencia', 'url_contracheque', 'dataHandoff', 'estado_civil', 'endereco_atual', 'url_carteira_trabalho', 'url_movimentacao', 'last_followup_status', 'last_mensagem_followup_at'
   ]
@@ -257,8 +232,22 @@ const downloadCSV = () => {
   }
 
   const header = columns.join(',') + "\r\n"
-  const rows = filteredLeads.value.map(lead => columns.map(col => escapeCSV(lead[col])).join(',')).join("\r\n")
-  const csvContent = "\uFEFF" + header + rows
+  const rows: string[] = []
+  const stageKey = selectedStage.value
+  const term = searchText.value
+  let after: string | undefined
+  while (true) {
+    // Rebuild the query for each cursor because PostgREST builders are mutable.
+    let query = waitingQuery(columns.join(','), false, stageKey, term).order('id').limit(200)
+    if (after) query = query.gt('id', after)
+    const { data, error: exportError } = await query
+    if (exportError) throw exportError
+    const batch = (data ?? []) as unknown as Record<string, unknown>[]
+    rows.push(...batch.map(lead => columns.map(col => escapeCSV(lead[col])).join(',')))
+    if (batch.length < 200) break
+    after = String(batch.at(-1)?.id)
+  }
+  const csvContent = "\uFEFF" + header + rows.join("\r\n")
 
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -269,6 +258,11 @@ const downloadCSV = () => {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+  } catch (err) {
+    error.value = 'Não foi possível exportar os leads em espera.'
+  } finally {
+    exporting.value = false
+  }
 }
 
 const formatPhone = (phone?: string | null, remotejid?: string | null) => {
@@ -302,56 +296,23 @@ const formatDate = (dateString?: string) => {
   })
 }
 
-// Realtime Subscription
-let realtimeChannel: any
-
-const setupRealtime = () => {
+let realtimeChannel: ReturnType<typeof supabase.channel> | undefined
+onMounted(async () => {
+  const result = await supabase.from('stage').select('id,estagio,estagio_name,descricao').order('id')
+  stages.value = result.data ?? []
+  await Promise.all([fetchLeads(), loadStageCounts()])
   realtimeChannel = supabase.channel('semcorretor_leads_changes')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'leads' },
-      (payload: any) => {
-        if (payload.eventType === 'INSERT') {
-          if (!payload.new.corretor_id) {
-            if (!leads.value.find((l: any) => l.id === payload.new.id)) {
-              leads.value.unshift(payload.new)
-            }
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          const idx = leads.value.findIndex((l: any) => l.id === payload.new.id)
-          if (payload.new.corretor_id) {
-            // Lead was assigned to a broker -> remove from "sem corretor" list
-            if (idx !== -1) {
-              leads.value.splice(idx, 1)
-              leads.value = [...leads.value]
-            }
-          } else {
-            // Lead is still without a broker -> update in list
-            if (idx !== -1) {
-              leads.value[idx] = { ...leads.value[idx], ...payload.new }
-              leads.value = [...leads.value]
-            } else {
-              leads.value.unshift(payload.new)
-              leads.value = [...leads.value]
-            }
-          }
-        } else if (payload.eventType === 'DELETE') {
-          leads.value = leads.value.filter((l: any) => l.id !== payload.old.id)
-        }
-      }
-    )
-    .subscribe()
-}
-
-onMounted(() => {
-  fetchLeads()
-  setupRealtime()
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+      clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => { void Promise.all([fetchLeads(), loadStageCounts()]) }, 400)
+    }).subscribe()
 })
 
 onUnmounted(() => {
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel)
-  }
+  ++request
+  ++detailRequest
+  clearTimeout(reloadTimer)
+  if (realtimeChannel) supabase.removeChannel(realtimeChannel)
 })
 </script>
 
@@ -373,7 +334,7 @@ onUnmounted(() => {
             <h1 class="text-xl lg:text-2xl font-bold tracking-tight flex items-center gap-3">
               Leads em Espera
               <span v-if="!loading" class="text-xs font-semibold text-primary-600 dark:text-primary-400 px-3 py-1 rounded-full bg-primary-50 dark:bg-primary-500/10 border border-primary-100 dark:border-primary-500/20">
-                {{ filteredLeads.length }} {{ filteredLeads.length === 1 ? 'interessado' : 'interessados' }}
+                {{ filteredTotal }} {{ filteredTotal === 1 ? 'interessado' : 'interessados' }}
               </span>
             </h1>
             <p class="text-gray-400 dark:text-dark-muted text-sm mt-0.5">
@@ -385,7 +346,7 @@ onUnmounted(() => {
         <div class="flex items-center gap-3">
           <button 
             @click="downloadCSV"
-            :disabled="filteredLeads.length === 0"
+            :disabled="exporting || filteredTotal === 0"
             class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-dark-surface border border-gray-200 dark:border-dark-border text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 text-sm font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download class="w-4 h-4 text-primary-500" />
@@ -495,7 +456,7 @@ onUnmounted(() => {
               </thead>
               <tbody class="divide-y divide-gray-50 dark:divide-dark-border text-sm">
                 <!-- Empty State -->
-                <tr v-if="!loading && filteredLeads.length === 0">
+                <tr v-if="!loading && filteredTotal === 0">
                   <td colspan="6" class="py-16 text-center">
                     <div class="flex flex-col items-center justify-center max-w-sm mx-auto">
                       <div class="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-dark-card flex items-center justify-center text-gray-400 dark:text-dark-muted mb-4 border border-gray-200 dark:border-dark-border">
@@ -518,7 +479,7 @@ onUnmounted(() => {
 
                 <!-- Rows -->
                 <tr 
-                  v-for="lead in paginatedLeads" 
+                  v-for="lead in leads"
                   :key="lead.id" 
                   class="group hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors"
                 >
@@ -596,48 +557,8 @@ onUnmounted(() => {
             </table>
           </div>
 
-          <!-- Pagination Footer -->
-          <div v-if="filteredLeads.length > 0" class="flex flex-col sm:flex-row items-center justify-between gap-3 px-6 py-3 border-t border-gray-100 dark:border-dark-border bg-gray-50/50 dark:bg-dark-card/50 text-xs text-gray-500 dark:text-dark-muted">
-            <div>
-              Mostrando <span class="font-semibold text-gray-900 dark:text-white">{{ ((currentPage - 1) * itemsPerPage) + 1 }}</span> a <span class="font-semibold text-gray-900 dark:text-white">{{ Math.min(currentPage * itemsPerPage, filteredLeads.length) }}</span> de <span class="font-semibold text-gray-900 dark:text-white">{{ filteredLeads.length }}</span> leads sem corretor
-            </div>
-
-            <div v-if="totalPages > 1" class="flex items-center gap-1">
-              <button 
-                @click="currentPage--"
-                :disabled="currentPage === 1"
-                class="p-1.5 rounded-lg border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title="Página anterior"
-              >
-                <ChevronLeft class="w-4 h-4" />
-              </button>
-
-              <template v-for="(page, idx) in visiblePages" :key="idx">
-                <span v-if="page === '...'" class="px-2 text-gray-400">...</span>
-                <button 
-                  v-else
-                  @click="currentPage = Number(page)"
-                  :class="[
-                    'w-7 h-7 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center',
-                    currentPage === page 
-                      ? 'bg-primary-500 text-white shadow-sm' 
-                      : 'border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5'
-                  ]"
-                >
-                  {{ page }}
-                </button>
-              </template>
-
-              <button 
-                @click="currentPage++"
-                :disabled="currentPage === totalPages"
-                class="p-1.5 rounded-lg border border-gray-200 dark:border-dark-border bg-white dark:bg-dark-surface text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title="Próxima página"
-              >
-                <ChevronRight class="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <CrmPagination :page="currentPage" :page-size="itemsPerPage" :total="filteredTotal" :loading="loading"
+            label="leads em espera" @change="currentPage = $event" />
         </div>
       </div>
     </main>

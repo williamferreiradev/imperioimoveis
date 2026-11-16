@@ -1,16 +1,25 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useSupabaseClient } from '#imports'
-import { MessageSquare, Phone, Search, FileText, Menu, X, BotOff, Bot, PhoneForwarded } from 'lucide-vue-next'
+import { isLeadId, qualifiedStages, searchLeadColumns } from '@/utils/crmQueries'
+import { MessageSquare, Phone, Search, FileText, Menu, X, BotOff, Bot, PhoneForwarded, ArrowLeft } from 'lucide-vue-next'
 
 const route = useRoute()
-const { mainMargin } = useSidebarState()
+const { mainMargin, isCollapsed } = useSidebarState()
+const threadMargin = computed(() => isCollapsed.value ? 'ml-16 sm:ml-20 xl:ml-0' : 'ml-16 sm:ml-72 xl:ml-0')
 const supabase = useSupabaseClient<any>()
 
 // State
 const chats = ref<any[]>([])
 const selectedChat = ref<any>(null)
-const messages = ref<any[]>([])
+const mobileThread = ref(false)
+type ChatMessage = {
+  id: number
+  sender: 'contact' | 'assistant' | 'system'
+  body: string | null
+}
+const messages = ref<ChatMessage[]>([])
+const visibleMessages = computed(() => messages.value.filter(message => message.body))
 const loading = ref(true)
 const messagesLoading = ref(false)
 const searchQuery = ref('')
@@ -53,258 +62,160 @@ const formatStageName = (stage: string) => {
   return map[stage] || stage
 }
 
-// Parse message object to extract text content
-const parseMessage = (msgObj: any) => {
-  if (!msgObj) return { text: '', isSystem: false, systemAction: '', type: 'text' }
-  
-  // Se for um objeto com a estrutura output (e.g. LangChain output object)
-  if (msgObj.output && typeof msgObj.output.content === 'string') {
-    return { text: msgObj.output.content, isSystem: false, systemAction: '', type: 'text' }
+const directorySize = 25
+const messageSize = 40
+const directoryOffset = ref(0)
+const hasMoreChats = ref(false)
+const directoryError = ref('')
+const messagesError = ref('')
+const hasOlder = ref(false)
+const loadingOlder = ref(false)
+let directoryRequest = 0
+let messageRequest = 0
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+let pollTimer: ReturnType<typeof setInterval> | undefined
+let polling = false
+
+function mapChat(row: any) {
+  return {
+    id: row.id,
+    name: row.name || 'Sem nome',
+    phone: row.phone || 'Sem telefone',
+    lastMessage: row.preview || 'Conversa iniciada…',
+    timestamp: row.created_at ? new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+    avatar: (row.name || 'U').charAt(0).toUpperCase(),
+    Ativado: Boolean(row.agent_active),
+    is_qualified: qualifiedStages.includes(row.stage),
+    estagiokanbam: row.stage || 'novo',
   }
-  
-  let text = msgObj.content || msgObj.text || ''
-  const msgType = msgObj.type || ''
-  
-  const additional = msgObj.additional_kwargs || msgObj.kwargs?.additional_kwargs || {}
-  const toolCalls = msgObj.tool_calls || additional.tool_calls || []
-  
-  if (toolCalls && toolCalls.length > 0) {
-     let toolNames = toolCalls.map((t: any) => {
-       if (typeof t.function?.name === 'string') return t.function.name
-       if (typeof t.name === 'string') return t.name
-       if (typeof t === 'string') return t
-       return 'ferramenta'
-     }).join(', ')
-     
-     const niceName = toolNames.replace(/_/g, ' ')
-     return { text: `IA ativou a(s) tool(s): ${niceName}`, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
-  }
-  
-  if (msgType === 'tool') {
-     return { text: typeof text === 'string' ? text : JSON.stringify(text), isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
-  }
-  
-  if (!text) return { text: '', isSystem: false, systemAction: '', type: 'text' }
-  
-  const trimmed = typeof text === 'string' ? text.trim() : JSON.stringify(text)
-  
-  if (trimmed.startsWith('Calling ') && trimmed.includes('with input:')) {
-     const functionName = trimmed.split(' ')[1] || 'ferramenta_interna'
-     const niceName = functionName.replace(/_/g, ' ')
-     return { text: trimmed, isSystem: true, systemAction: `A IA ativou a tool: ${niceName}`, type: 'tool' }
-  }
-  
-  if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
-    try {
-      const parsed = JSON.parse(trimmed)
-      if (parsed.output && typeof parsed.output.content === 'string') {
-         return { text: parsed.output.content, isSystem: false, systemAction: '', type: 'text' }
-      }
-      if (typeof parsed === 'object') {
-         return { text: trimmed, isSystem: true, systemAction: 'Consultou o banco de dados', type: 'tool' }
-      }
-    } catch(e) {}
-  }
-  
-  return { text: trimmed, isSystem: false, systemAction: '', type: 'text' }
 }
 
-// Fetch Clients to populate chat list
-const fetchChats = async () => {
+async function fetchChats(reset = false) {
+  if (!reset && (loading.value || !hasMoreChats.value)) return
+  const request = ++directoryRequest
   loading.value = true
+  directoryError.value = ''
+  const offset = reset ? 0 : directoryOffset.value
+  let query = supabase.from('crm_chat_directory')
+    .select('id,name,phone,stage,agent_active,created_at,preview')
+  if (searchQuery.value.trim()) query = query.or(searchLeadColumns(searchQuery.value))
+  const result = await query.order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false })
+    .range(offset, offset + directorySize)
+  if (request !== directoryRequest) return
+  loading.value = false
+  if (result.error) {
+    directoryError.value = 'Não foi possível carregar a lista de conversas.'
+    return
+  }
+  const batch = (result.data ?? []).slice(0, directorySize).map(mapChat)
+  const prior = reset ? [] : chats.value
+  const seen = new Set(prior.map(chat => chat.id))
+  chats.value = [...prior, ...batch.filter(chat => !seen.has(chat.id))]
+  directoryOffset.value = offset + batch.length
+  hasMoreChats.value = (result.data?.length ?? 0) > directorySize
+}
+
+async function fetchMessages(older = false) {
+  const chatId = selectedChat.value?.id
+  if (!chatId || (older && (loadingOlder.value || !hasOlder.value))) return
+  const request = messageRequest
+  const oldest = older ? messages.value[0]?.id : null
+  if (older) loadingOlder.value = true
+  else messagesLoading.value = true
+  messagesError.value = ''
+  let query = supabase.from('crm_chat_messages').select('id,sender,body').eq('session_id', chatId)
+    .order('id', { ascending: false }).limit(messageSize + 1)
+  if (oldest != null) query = query.lt('id', oldest)
+  const result = await query
+  if (request !== messageRequest) return
+  messagesLoading.value = false
+  loadingOlder.value = false
+  if (result.error) {
+    messagesError.value = 'Não foi possível carregar as mensagens.'
+    return
+  }
+  const container = messagesContainer.value
+  const previousHeight = container?.scrollHeight ?? 0
+  const previousTop = container?.scrollTop ?? 0
+  const batch = (result.data ?? []).slice(0, messageSize).reverse() as ChatMessage[]
+  const unique = new Map([...batch, ...messages.value].map(message => [message.id, message]))
+  messages.value = [...unique.values()].sort((a, b) => a.id - b.id)
+  hasOlder.value = (result.data?.length ?? 0) > messageSize
+  await nextTick()
+  if (request !== messageRequest || !container) return
+  if (older) container.scrollTop = previousTop + container.scrollHeight - previousHeight
+  else container.scrollTop = container.scrollHeight
+}
+
+async function appendMessages(rows: ChatMessage[], request: number) {
+  if (request !== messageRequest || !rows.length) return
+  const container = messagesContainer.value
+  const atBottom = !container || container.scrollHeight - container.clientHeight - container.scrollTop < 120
+  const seen = new Set(messages.value.map(message => message.id))
+  const batch = rows.filter(row => !seen.has(row.id))
+  if (!batch.length) return
+  messages.value = [...messages.value, ...batch].sort((a, b) => a.id - b.id)
+  const preview = batch.filter(message => message.body && message.sender !== 'system').at(-1)
+  if (preview?.body) {
+    const chat = [selectedChat.value, ...chats.value].filter(item => item?.id === selectedChat.value?.id)
+    for (const item of chat) item.lastMessage = Array.from(preview.body).slice(0, 180).join('')
+  }
+  await nextTick()
+  if (request === messageRequest && atBottom && container) container.scrollTop = container.scrollHeight
+}
+
+async function pollActiveConversation() {
+  const chatId = selectedChat.value?.id
+  if (!chatId || polling || messagesLoading.value || document.hidden) return
+  if (!mobileThread.value && !window.matchMedia('(min-width: 1280px)').matches) return
+  polling = true
+  const request = messageRequest
   try {
-    // Fetch stages from DB
-    try {
-      const { data: stagesData } = await supabase.from('stage').select('*').order('id')
-      if (stagesData && stagesData.length > 0) {
-        stages.value = stagesData
-      }
-    } catch (e) {
-      console.error('Error fetching stages:', e)
-    }
-
-    const { data: leadsData, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false })
-    if (error) throw error
-
-    // Fetch latest messages for sidelist
-    const { data: allChats } = await supabase.from('n8n_chat_histories').select('session_id, message, id').order('id', { ascending: false })
-    
-    const latestMsgs: Record<string, any> = {}
-    if (allChats) {
-       for(const c of allChats) {
-          if (c.session_id && !latestMsgs[c.session_id]) {
-             latestMsgs[c.session_id] = c;
-          }
-       }
-    }
-
-    chats.value = (leadsData || []).map(c => {
-      let lastMsgText = 'Conversa iniciada...'
-      let lastSender = 'user'
-      
-      if (latestMsgs[c.id]) {
-        let rawMsg = latestMsgs[c.id].message || {}
-        if (typeof rawMsg === 'string') {
-          try { rawMsg = JSON.parse(rawMsg) } catch(e) {}
-        }
-        const realData = rawMsg.data || rawMsg
-        const parsed = parseMessage(realData)
-        lastMsgText = parsed.text || 'Conversa iniciada...'
-        lastSender = (realData.type === 'ai' || realData.id?.includes('AIMessage')) ? 'me' : 'user'
-      } else if (c.notes) {
-        lastMsgText = c.notes
-      }
-
-      return {
-        id: c.id,
-        name: c.name || 'Sem nome',
-        phone: c.phone || c.remotejid || 'Sem telefone',
-        lastMessage: lastMsgText,
-        lastSender: lastSender,
-        timestamp: c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-        avatar: (c.name || 'U').charAt(0).toUpperCase(),
-        media_url: undefined,
-        Ativado: c.agent_active || false,
-        is_qualified: c.is_qualified || ['qualificado', 'convertido', 'agendado', 'negociacao', 'visita', 'fechado'].includes(c.stage) || false,
-        estagiokanbam: c.stage || 'novo'
-      }
-    })
-
-    const clientId = route.query.clientId as string
-    if (clientId) {
-      const chat = chats.value.find(c => c.id === clientId || c.phone === clientId)
-      if (chat) selectChat(chat)
-    } else if (chats.value.length > 0) {
-      selectChat(chats.value[0])
-    }
-  } catch (error) {
-    console.error('Error fetching chats:', error)
+    const newestId = messages.value.at(-1)?.id ?? 0
+    const { data, error } = await supabase.from('crm_chat_messages').select('id,sender,body')
+      .eq('session_id', chatId).gt('id', newestId).order('id').limit(messageSize)
+    if (!error) await appendMessages(data ?? [], request)
   } finally {
-    loading.value = false
+    polling = false
   }
 }
 
-// Fetch Messages for selected chat
-const fetchMessages = async (chatId: string) => {
-  messagesLoading.value = true
+function selectChat(chat: any, reveal = true) {
+  if (reveal) mobileThread.value = true
+  if (selectedChat.value?.id === chat.id) {
+    if (reveal) void pollActiveConversation()
+    return
+  }
+  ++messageRequest
+  selectedChat.value = chat
+  messages.value = []
+  isSidebarOpen.value = false
   showSummary.value = false
   summaryText.value = ''
-  try {
-    const { data, error } = await supabase.from('n8n_chat_histories')
-      .select('*')
-      .eq('session_id', chatId)
-      .order('id', { ascending: true })
-      
-    if (error) throw error
-    
-
-
-    messages.value = (data || []).map(m => {
-      let rawMsg = m.message || {}
-      if (typeof rawMsg === 'string') {
-        try { rawMsg = JSON.parse(rawMsg) } catch(e) {}
-      }
-      
-      // No LangChain as vezes a mensagem vem dentro de "data"
-      const realData = rawMsg.data || rawMsg
-      const parsed = parseMessage(realData)
-      
-      return {
-        id: m.id,
-        sender: (realData.type === 'ai' || realData.id?.includes('AIMessage')) ? 'me' : 'user', 
-        text: parsed.text,
-        isSystem: parsed.isSystem,
-        systemAction: parsed.systemAction,
-        timestamp: '', 
-        type: parsed.type
-      }
-    })
-    
-    scrollToBottom()
-  } catch (e) {
-    console.error('Error fetching messages', e)
-  } finally {
-    messagesLoading.value = false
-  }
+  messagesError.value = ''
+  hasOlder.value = false
+  loadingOlder.value = false
+  void fetchMessages()
 }
 
-const selectChat = (chat: any) => {
-  selectedChat.value = chat
-  isSidebarOpen.value = false
-  fetchMessages(chat.id)
+async function selectFromRoute(value: unknown) {
+  if (typeof value !== 'string' || !value) return
+  const existing = chats.value.find(chat => chat.id === value || chat.phone === value)
+  if (existing) return selectChat(existing)
+  let query = supabase.from('crm_chat_directory').select('id,name,phone,stage,agent_active,created_at,preview')
+  query = isLeadId(value) ? query.eq('id', value) : query.eq('phone', value)
+  const { data } = await query.limit(1).maybeSingle()
+  if (route.query.clientId === value && data) selectChat(mapChat(data))
 }
 
-const scrollToBottom = async () => {
-  await nextTick()
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight + 100
-  }
-  // Fallback garantido pro final caso renderize algo pesado
-  setTimeout(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight + 100
-    }
-  }, 150)
-}
-
-let realtimeChannel: any
-
-const playNotificationSound = () => {
-    try {
-       const audio = new window.Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3')
-       audio.volume = 0.5
-       audio.play().catch(() => {})
-    } catch(e) {}
-}
-
-const setupRealtime = () => {
-  realtimeChannel = supabase.channel('chat_updates')
-    .on(
-      'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'n8n_chat_histories' },
-      async (payload) => {
-        const row = payload.new
-        
-        // Toca notificação quando qualquer mensagem for inserida via n8n
-        playNotificationSound()
-
-        // Update current active chat window
-        if (selectedChat.value && row.session_id === selectedChat.value.id) {
-          let rawMsg = row.message || {}
-          if (typeof rawMsg === 'string') {
-            try { rawMsg = JSON.parse(rawMsg) } catch(e) {}
-          }
-          const realData = rawMsg.data || rawMsg
-          const parsed = parseMessage(realData)
-          
-          messages.value.push({
-            id: row.id,
-            sender: (realData.type === 'ai' || realData.id?.includes('AIMessage')) ? 'me' : 'user',
-            text: parsed.text,
-            isSystem: parsed.isSystem,
-            systemAction: parsed.systemAction,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            type: parsed.type
-          })
-          scrollToBottom()
-        }
-
-        // Update Sidebar lastMessage
-        const chatIdx = chats.value.findIndex(c => c.id === row.session_id)
-        if (chatIdx !== -1) {
-           let rawMsg = row.message || {}
-           if (typeof rawMsg === 'string') {
-             try { rawMsg = JSON.parse(rawMsg) } catch(e) {}
-           }
-           const realData = rawMsg.data || rawMsg
-           const parsed = parseMessage(realData)
-           chats.value[chatIdx].lastMessage = parsed.text || 'Conversa iniciada...'
-           chats.value[chatIdx].lastSender = (realData.type === 'ai' || realData.id?.includes('AIMessage')) ? 'me' : 'user'
-        }
-      }
-    )
-    .subscribe()
-}
+watch(searchQuery, () => {
+  clearTimeout(searchTimer)
+  ++directoryRequest
+  loading.value = true
+  chats.value = []
+  searchTimer = setTimeout(() => { void fetchChats(true) }, 250)
+})
+watch(() => route.query.clientId, value => { void selectFromRoute(value) })
 
 // Generate Summary
 const generateSummary = async () => {
@@ -398,15 +309,23 @@ const updateStatus = async () => {
   }
 }
 
-onMounted(() => {
-  fetchChats()
-  setupRealtime()
+onMounted(async () => {
+  const [, stageResult] = await Promise.all([
+    fetchChats(true),
+    supabase.from('stage').select('id,estagio,estagio_name').order('id'),
+  ])
+  if (!stageResult.error) stages.value = stageResult.data ?? []
+  if (route.query.clientId) await selectFromRoute(route.query.clientId)
+  else if (chats.value[0]) selectChat(chats.value[0], false)
+  pollTimer = setInterval(() => { void pollActiveConversation() }, 20000)
+  document.addEventListener('visibilitychange', pollActiveConversation)
 })
-
 onUnmounted(() => {
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel)
-  }
+  ++directoryRequest
+  ++messageRequest
+  clearTimeout(searchTimer)
+  clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', pollActiveConversation)
 })
 </script>
 
@@ -415,7 +334,10 @@ onUnmounted(() => {
     <Sidebar />
 
     <!-- Chat Sidebar (Left) -->
-    <aside :class="[mainMargin, 'w-80 border-r border-gray-100 dark:border-dark-border flex flex-col bg-white dark:bg-dark-surface flex-shrink-0 transition-all duration-300']">
+    <aside
+      :class="[mainMargin, mobileThread ? 'hidden xl:flex' : 'flex']"
+      class="w-full xl:w-80 xl:shrink-0 flex-col border-r border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface transition-colors duration-300"
+    >
       <!-- Header -->
       <div class="p-5 border-b border-gray-100 dark:border-dark-border">
         <div class="flex items-center justify-between mb-3">
@@ -440,7 +362,7 @@ onUnmounted(() => {
         <div v-if="loading" class="p-8 text-center text-gray-400 dark:text-dark-muted text-sm">
           Carregando...
         </div>
-        <div v-else-if="chats.length === 0" class="p-8 text-center text-gray-400 dark:text-dark-muted text-sm">
+        <div v-else-if="!directoryError && chats.length === 0" class="p-8 text-center text-gray-400 dark:text-dark-muted text-sm">
           Nenhuma conversa encontrada.
         </div>
         <button
@@ -463,21 +385,27 @@ onUnmounted(() => {
               </div>
               <span class="text-[10px] text-gray-400 dark:text-dark-muted flex-shrink-0">{{ chat.timestamp }}</span>
             </div>
-            <p class="text-xs text-gray-400 dark:text-dark-muted truncate flex items-center gap-1">
-              <span v-if="chat.lastSender === 'me'" class="text-[12px] font-bold text-gray-400 mb-0.5">•</span>
-              <span class="truncate">{{ chat.lastMessage }}</span>
-            </p>
+            <p class="truncate text-xs text-gray-500 dark:text-dark-muted">{{ chat.lastMessage }}</p>
           </div>
         </button>
+        <div v-if="directoryError || hasMoreChats" class="p-3 text-center">
+          <p v-if="directoryError" role="alert" class="mb-2 text-xs text-red-600">{{ directoryError }}</p>
+          <button class="min-h-9 rounded-md border px-3 text-sm" type="button" :disabled="loading"
+            @click="fetchChats(directoryOffset === 0)">{{ directoryError ? 'Tentar novamente' : 'Carregar mais conversas' }}</button>
+        </div>
       </div>
     </aside>
 
     <!-- Chat Content (Middle) -->
-    <section class="flex-1 flex flex-col bg-gray-50 dark:bg-dark-bg relative min-w-0 transition-colors duration-300">
+    <section :class="mobileThread ? ['flex', threadMargin] : 'hidden xl:flex'"
+      class="flex-1 flex-col bg-gray-50 dark:bg-dark-bg relative min-w-0 transition-colors duration-300">
       <div v-if="selectedChat" class="flex-1 flex flex-col overflow-hidden relative">
         <!-- Header -->
-        <header class="px-6 py-4 border-b border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface flex items-center justify-between z-20">
-          <div class="flex items-center gap-3">
+        <header class="flex-wrap gap-2 px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-dark-border bg-white dark:bg-dark-surface flex items-center justify-between z-20">
+          <div class="flex min-w-0 items-center gap-2">
+            <button type="button" class="shrink-0 p-1 xl:hidden" aria-label="Voltar para conversas" @click="mobileThread = false">
+              <ArrowLeft class="h-4 w-4" />
+            </button>
             <div class="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-500/10 text-primary-600 dark:text-primary-400 flex items-center justify-center font-bold">
               {{ selectedChat.avatar }}
             </div>
@@ -510,45 +438,47 @@ onUnmounted(() => {
         </header>
 
         <!-- Messages Area -->
-        <div ref="messagesContainer" class="flex-1 overflow-y-auto overflow-x-hidden p-6 flex flex-col gap-4 relative custom-scrollbar pb-24">
+        <div ref="messagesContainer" class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6 flex flex-col gap-4 relative custom-scrollbar pb-12">
           <div v-if="messagesLoading" class="flex-1 flex items-center justify-center">
              <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
           </div>
-          <div v-else-if="messages.length === 0" class="flex-1 flex items-center justify-center">
+          <div v-else-if="!messagesError && !hasOlder && visibleMessages.length === 0" class="flex-1 flex items-center justify-center">
              <p class="text-gray-400 dark:text-dark-muted text-sm">Nenhuma mensagem encontrada nesta sessão.</p>
           </div>
+          <div v-if="!messagesLoading && hasOlder" class="shrink-0 text-center">
+            <button type="button" :disabled="loadingOlder" class="min-h-9 rounded-md border px-3 text-sm" @click="fetchMessages(true)">
+              {{ loadingOlder ? 'Carregando…' : 'Carregar mensagens anteriores' }}
+            </button>
+          </div>
+          <p v-if="messagesError" role="alert" class="text-center text-sm text-red-600">
+            {{ messagesError }} <button type="button" class="underline" @click="fetchMessages(!!messages.length)">Tentar novamente</button>
+          </p>
           <div
-            v-else
-            v-for="message in messages"
+            v-for="message in visibleMessages"
             :key="message.id"
-            :class="[
-              'flex',
-              message.isSystem ? 'justify-center my-2' : (message.sender === 'me' ? 'justify-end' : 'justify-start')
-            ]"
+            :data-sender="message.sender"
+            :class="['flex shrink-0', message.sender === 'system' ? 'justify-center' : message.sender === 'assistant' ? 'justify-end' : 'justify-start']"
           >
-            <!-- Renderização das chamadas de Banco/Ferramentas do N8N -->
             <div
-              v-if="message.isSystem"
-              class="px-3 py-1.5 bg-gray-100 dark:bg-dark-surface border border-gray-200 dark:border-dark-border rounded-full text-[10px] text-gray-500 dark:text-dark-muted shadow-sm flex items-center gap-1.5"
+              v-if="message.sender === 'system'"
+              class="flex max-w-full items-start gap-2 rounded-xl border border-gray-200 bg-gray-100 px-3 py-1.5 text-xs text-gray-600 dark:border-dark-border dark:bg-dark-surface dark:text-dark-muted"
             >
-               <Bot class="w-3.5 h-3.5 text-primary-500" />
-               <span class="font-medium tracking-wide">Ação de IA:</span> {{ message.systemAction }}
+              <Bot class="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-500" aria-hidden="true" />
+              <p class="min-w-0 whitespace-pre-wrap break-words">
+                <span class="mr-1 font-semibold">Sistema</span> {{ message.body }}
+              </p>
             </div>
-
-            <!-- Balão de conversa normal -->
             <div
               v-else
               :class="[
-                'max-w-md px-4 py-3 rounded-2xl shadow-sm overflow-hidden shrink-0',
-                message.sender === 'me' 
-                  ? 'bg-primary-500 text-white rounded-br-none' 
-                  : 'bg-white dark:bg-dark-surface text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-dark-border rounded-bl-none'
+                'min-w-0 max-w-[min(100%,28rem)] rounded-2xl px-4 py-3 shadow-sm',
+                message.sender === 'assistant'
+                  ? 'rounded-br-none bg-primary-600 text-white'
+                  : 'rounded-bl-none border border-gray-100 bg-white text-gray-800 dark:border-dark-border dark:bg-dark-surface dark:text-gray-200'
               ]"
             >
-              <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ message.text }}</p>
-              <p v-if="message.timestamp" :class="['text-[10px] mt-1 text-right', message.sender === 'me' ? 'text-white/70' : 'text-gray-400 dark:text-dark-muted']">
-                {{ message.timestamp }}
-              </p>
+              <p v-if="message.sender === 'assistant'" class="mb-1 text-xs font-semibold text-white/90">IA</p>
+              <p class="whitespace-pre-wrap break-words text-sm leading-relaxed">{{ message.body }}</p>
             </div>
           </div>
 
